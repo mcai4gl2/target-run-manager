@@ -16,6 +16,7 @@ export class GroupNode extends vscode.TreeItem {
     this.contextValue = 'group';
     this.iconPath = new vscode.ThemeIcon('folder');
     this.id = `group:${group.id}`;
+    this.tooltip = `Group: ${group.name} (${group.configs.length} config${group.configs.length !== 1 ? 's' : ''})`;
   }
 }
 

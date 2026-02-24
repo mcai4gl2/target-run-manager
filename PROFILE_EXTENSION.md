@@ -818,7 +818,7 @@ target-run-manager/
 | Phase | Scope | Status |
 |---|---|---|
 | **Phase 1 — CMake Core** | Config directory loader (multi-file YAML/JSON, merge, watch), variable/macro expander, CMake target discovery (File API), TreeView with groups/configs, Run + Build actions in terminal | ✅ **COMPLETE** (2026-02-25) |
-| **Phase 2 — Config Editor** | Webview form editor, CRUD, clone, move to group, binary override field, macro editor | ⬜ Not started |
+| **Phase 2 — Config Editor** | Webview form editor, CRUD, clone, move to group, binary override field, macro editor | ✅ **COMPLETE** (2026-02-25) |
 | **Phase 3 — Analysis Mode** | Valgrind + perf runners, output dir management, post-process commands, `binaryOverride` for manual binaries | ⬜ Not started |
 | **Phase 4 — Debugger + DevContainer** | Direct `vscode.debug.startDebugging()` without touching `launch.json`, Docker exec wrapping | ⬜ Not started |
 | **Phase 5 — Bazel** | `bazel query` discovery, BazelBuildProvider, Bazel-specific config fields, BUILD file CodeLens | ⬜ Not started |
@@ -880,6 +880,33 @@ All files      | 91.69% stmts | 82.94% branches | 95.12% funcs | 91.61% lines
 ```
 
 All thresholds met (≥80% lines/functions, ≥75% branches).
+
+### Phase 2 — Implementation Details
+
+**Completed 2026-02-25.** 120 unit tests passing (+25 vs Phase 1). ≥80% coverage maintained.
+
+#### Files Created / Modified
+
+| File | Change | Description |
+|---|---|---|
+| `src/model/storage.ts` | Modified | Full CRUD: `saveConfig` (create+update in-place), `deleteConfig`, `cloneConfig`, `moveConfigToGroup`, `addGroup`, `renameGroup`, `deleteGroup` |
+| `src/ui/configEditor.ts` | Created | Webview panel with complete HTML/CSS/JS form. All config fields: name, buildSystem (radio), target, buildConfig, kind, runMode (radio), binaryOverride, args (token list), env (kv table), cwd, sourceScripts, preBuild checkbox, terminal (radio), analyzeConfig section (conditional on runMode=analyze, with tool/subtool/toolArgs/outputDir/postProcess/openReport/customCommand), macros editor (kv table) |
+| `src/providers/treeProvider.ts` | Modified | Added group tooltip showing config count |
+| `src/extension.ts` | Modified | Wired all Phase 2 commands: addGroup, renameGroup, deleteGroup, addConfig, editConfig, cloneConfig, deleteConfig, moveToGroup — all using real implementations |
+| `package.json` | Modified | Added renameGroup/deleteGroup/moveToGroup commands; added view/title menu buttons (Add Group, Add Config, Refresh); fixed viewItem context values to match `runConfig`/`group` |
+| `src/__tests__/model/storage.test.ts` | Created | 25 tests covering all CRUD operations and configToPlain serialization |
+
+#### Phase 2 Feature Summary
+
+- **Config Editor Webview**: Full-featured form panel with VS Code theme styling. Opens via "Add Config" or "Edit" inline button. Sends `save`/`cancel` messages to extension.
+- **Create config**: Opens blank form, saves to primary config file in chosen group or ungrouped.
+- **Edit config**: Opens form pre-populated with existing values, updates in-place in the source YAML file.
+- **Clone config**: Duplicates with a new ID and "(copy)" suffix, placed in same group.
+- **Delete config**: Confirmation dialog → removes from source YAML.
+- **Move to Group**: Quick-pick of all groups → updates source file.
+- **Group management**: Add Group (prompted name → generates id), Rename Group, Delete Group (refuses if non-empty unless forced).
+- **Analysis Config section**: Conditionally shown when runMode=analyze. Supports all 7 tools with dynamic subtool dropdown (valgrind sub-tools, perf sub-tools), custom command template field.
+- **Macros editor**: Key-value table for config-level macro overrides.
 
 ---
 

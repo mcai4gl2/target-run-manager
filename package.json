@@ -86,6 +86,21 @@
       {
         "command": "targetRunManager.switchActive",
         "title": "Switch Active Target"
+      },
+      {
+        "command": "targetRunManager.renameGroup",
+        "title": "Rename Group",
+        "icon": "$(edit)"
+      },
+      {
+        "command": "targetRunManager.deleteGroup",
+        "title": "Delete Group",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "targetRunManager.moveToGroup",
+        "title": "Move to Group",
+        "icon": "$(arrow-right)"
       }
     ],
     "views": {
@@ -109,33 +124,70 @@
       "view/item/context": [
         {
           "command": "targetRunManager.run",
-          "when": "view == targetRunManagerView && viewItem == config",
+          "when": "view == targetRunManagerView && viewItem == runConfig",
           "group": "inline@1"
         },
         {
           "command": "targetRunManager.build",
-          "when": "view == targetRunManagerView && viewItem == config",
+          "when": "view == targetRunManagerView && viewItem == runConfig",
           "group": "inline@2"
         },
         {
           "command": "targetRunManager.debug",
-          "when": "view == targetRunManagerView && viewItem == config",
+          "when": "view == targetRunManagerView && viewItem == runConfig",
           "group": "inline@3"
         },
         {
           "command": "targetRunManager.editConfig",
-          "when": "view == targetRunManagerView && viewItem == config",
+          "when": "view == targetRunManagerView && viewItem == runConfig",
           "group": "inline@4"
         },
         {
           "command": "targetRunManager.cloneConfig",
-          "when": "view == targetRunManagerView && viewItem == config",
-          "group": "inline@5"
+          "when": "view == targetRunManagerView && viewItem == runConfig",
+          "group": "context@1"
+        },
+        {
+          "command": "targetRunManager.moveToGroup",
+          "when": "view == targetRunManagerView && viewItem == runConfig",
+          "group": "context@2"
         },
         {
           "command": "targetRunManager.deleteConfig",
-          "when": "view == targetRunManagerView && viewItem == config",
-          "group": "inline@6"
+          "when": "view == targetRunManagerView && viewItem == runConfig",
+          "group": "context@3"
+        },
+        {
+          "command": "targetRunManager.addConfig",
+          "when": "view == targetRunManagerView && viewItem == group",
+          "group": "inline@1"
+        },
+        {
+          "command": "targetRunManager.renameGroup",
+          "when": "view == targetRunManagerView && viewItem == group",
+          "group": "context@1"
+        },
+        {
+          "command": "targetRunManager.deleteGroup",
+          "when": "view == targetRunManagerView && viewItem == group",
+          "group": "context@2"
+        }
+      ],
+      "view/title": [
+        {
+          "command": "targetRunManager.addGroup",
+          "when": "view == targetRunManagerView",
+          "group": "navigation@1"
+        },
+        {
+          "command": "targetRunManager.addConfig",
+          "when": "view == targetRunManagerView",
+          "group": "navigation@2"
+        },
+        {
+          "command": "targetRunManager.refresh",
+          "when": "view == targetRunManagerView",
+          "group": "navigation@3"
         }
       ]
     },
