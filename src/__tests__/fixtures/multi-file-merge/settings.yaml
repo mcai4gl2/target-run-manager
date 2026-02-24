@@ -1,0 +1,9 @@
+version: 1
+
+settings:
+  cmake:
+    defaultPreset: debug
+    autoRefreshOnChange: true
+  macros:
+    DATA_ROOT: /mnt/data
+    SERVER_PORT: "8080"

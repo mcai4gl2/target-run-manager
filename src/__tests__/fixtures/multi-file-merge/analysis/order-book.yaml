@@ -1,0 +1,17 @@
+groups:
+  - id: grp-order-book
+    name: Order Book
+    configs:
+      - id: cfg-ob-valgrind
+        name: Valgrind memcheck
+        buildSystem: cmake
+        target: order_book_main
+        kind: executable
+        buildConfig: debug
+        runMode: analyze
+        preBuild: true
+        analyzeConfig:
+          tool: valgrind
+          subTool: memcheck
+          outputDir: "${workspaceFolder}/out/analysis/${date}"
+          openReport: false

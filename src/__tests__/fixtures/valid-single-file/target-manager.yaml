@@ -1,0 +1,49 @@
+version: 1
+
+groups:
+  - id: grp-order-book
+    name: Order Book
+    configs:
+      - id: cfg-ob-run-debug
+        name: Run (debug)
+        buildSystem: cmake
+        target: order_book_main
+        kind: executable
+        buildConfig: debug
+        runMode: run
+        args: [--mode, sim]
+        env:
+          LOG_LEVEL: DEBUG
+          DATA_DIR: "${workspaceFolder}/data"
+        cwd: "${workspaceFolder}"
+        preBuild: true
+        terminal: dedicated
+
+      - id: cfg-ob-run-release
+        name: Run (release)
+        buildSystem: cmake
+        target: order_book_main
+        kind: executable
+        buildConfig: release
+        runMode: run
+        args: [--mode, live]
+        env:
+          LOG_LEVEL: WARN
+        preBuild: true
+
+ungrouped:
+  - id: cfg-ungrouped-test
+    name: Ungrouped Test
+    buildSystem: cmake
+    target: some_test
+    kind: test
+    buildConfig: debug
+    runMode: test
+    preBuild: true
+
+settings:
+  cmake:
+    defaultPreset: debug
+    autoRefreshOnChange: true
+  macros:
+    DATA_ROOT: "${workspaceFolder}/data"

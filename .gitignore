@@ -1,0 +1,9 @@
+node_modules/
+out/
+out-test/
+*.vsix
+.vscode-test/
+coverage/
+.vscode/target-manager/local*.yaml
+.vscode/target-manager/personal/
+.geo_protected_config.json

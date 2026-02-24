@@ -815,17 +815,71 @@ target-run-manager/
 
 ## Development Phases
 
-| Phase | Scope |
-|---|---|
-| **Phase 1 — CMake Core** | Config directory loader (multi-file YAML/JSON, merge, watch), variable/macro expander, CMake target discovery (File API), TreeView with groups/configs, Run + Build actions in terminal |
-| **Phase 2 — Config Editor** | Webview form editor, CRUD, clone, move to group, binary override field, macro editor |
-| **Phase 3 — Analysis Mode** | Valgrind + perf runners, output dir management, post-process commands, `binaryOverride` for manual binaries |
-| **Phase 4 — Debugger + DevContainer** | Direct `vscode.debug.startDebugging()` without touching `launch.json`, Docker exec wrapping |
-| **Phase 5 — Bazel** | `bazel query` discovery, BazelBuildProvider, Bazel-specific config fields, BUILD file CodeLens |
-| **Phase 6 — CodeLens + Import** | CMakeLists.txt + BUILD file CodeLens, import from `# vscode:` comments |
-| **Phase 7 — Advanced** | Source scripts, compound configs, run history, preset/config matrix view, output capture, heaptrack/strace tools |
+| Phase | Scope | Status |
+|---|---|---|
+| **Phase 1 — CMake Core** | Config directory loader (multi-file YAML/JSON, merge, watch), variable/macro expander, CMake target discovery (File API), TreeView with groups/configs, Run + Build actions in terminal | ✅ **COMPLETE** (2026-02-25) |
+| **Phase 2 — Config Editor** | Webview form editor, CRUD, clone, move to group, binary override field, macro editor | ⬜ Not started |
+| **Phase 3 — Analysis Mode** | Valgrind + perf runners, output dir management, post-process commands, `binaryOverride` for manual binaries | ⬜ Not started |
+| **Phase 4 — Debugger + DevContainer** | Direct `vscode.debug.startDebugging()` without touching `launch.json`, Docker exec wrapping | ⬜ Not started |
+| **Phase 5 — Bazel** | `bazel query` discovery, BazelBuildProvider, Bazel-specific config fields, BUILD file CodeLens | ⬜ Not started |
+| **Phase 6 — CodeLens + Import** | CMakeLists.txt + BUILD file CodeLens, import from `# vscode:` comments | ⬜ Not started |
+| **Phase 7 — Advanced** | Source scripts, compound configs, run history, preset/config matrix view, output capture, heaptrack/strace tools | ⬜ Not started |
 
 Tests and CI are developed alongside each phase, not deferred — see Testing Strategy below.
+
+### Phase 1 — Implementation Details
+
+**Completed 2026-02-25.** All deliverables implemented with 95 unit tests passing, ≥80% coverage across all modules.
+
+#### Files Created
+
+| File | Description |
+|---|---|
+| `package.json` | Extension manifest with commands, views, keybindings, menus, configuration |
+| `tsconfig.json` / `tsconfig.test.json` | TypeScript compiler config |
+| `jest.config.ts` | Jest config with ts-jest, vscode mock, 80%/75% coverage thresholds |
+| `.eslintrc.json` | ESLint rules |
+| `.gitignore` / `.vscodeignore` | Ignore patterns |
+| `.github/workflows/ci.yml` | CI: lint + typecheck + test on push/PR |
+| `.github/workflows/release.yml` | Release: build + test + publish to VS Code Marketplace + Open VSX |
+| `src/model/config.ts` | All TypeScript types: `RunConfig`, `Group`, `WorkspaceModel`, etc. |
+| `src/model/storage.ts` | Config writer (YAML serialization back to disk) |
+| `src/loader/discovery.ts` | Recursive file discovery under `.vscode/target-manager/` |
+| `src/loader/parser.ts` | YAML/JSON parser → `RawFile` (uses js-yaml) |
+| `src/loader/merger.ts` | Multi-file merge: same-id groups deep-merged, settings precedence |
+| `src/loader/validator.ts` | Schema validation, duplicate ID detection |
+| `src/loader/watcher.ts` | `fs.watch`-based config file watcher with 300ms debounce |
+| `src/variables/builtins.ts` | Built-in vars: `${buildDir}`, `${date}`, `${datetime}`, `${gitBranch}`, `${gitHash}`, `${preset}`, `${targetBinary}` |
+| `src/variables/macros.ts` | Macro scope resolution (config > file > project > builtins) + cycle detection |
+| `src/variables/expander.ts` | Full variable expansion pipeline for strings, arrays, objects |
+| `src/build/provider.ts` | `BuildSystemProvider` interface |
+| `src/build/cmake/fileApi.ts` | CMake File API (codemodel-v2) client |
+| `src/build/cmake/discovery.ts` | CMake target discovery + CTest enumeration |
+| `src/build/cmake/provider.ts` | `CMakeBuildProvider` — build, run, test commands |
+| `src/build/manual/provider.ts` | `ManualBuildProvider` — no-op build, uses `binaryOverride` |
+| `src/providers/treeProvider.ts` | `TargetRunManagerTreeProvider` — sidebar tree with group/config nodes |
+| `src/runner/taskRunner.ts` | Terminal runner (dedicated/shared/reuse modes) |
+| `src/runner/runner.ts` | Main orchestrator: build → resolve binary → run/test in terminal |
+| `src/ui/statusBar.ts` | Status bar item showing active config |
+| `src/ui/quickPick.ts` | Quick-pick for switching active config |
+| `src/extension.ts` | Extension entry point: activate, register all providers + commands |
+| `src/__tests__/loader/discovery.test.ts` | 8 tests |
+| `src/__tests__/loader/parser.test.ts` | 14 tests |
+| `src/__tests__/loader/merger.test.ts` | 13 tests |
+| `src/__tests__/loader/validator.test.ts` | 11 tests |
+| `src/__tests__/variables/builtins.test.ts` | 12 tests |
+| `src/__tests__/variables/macros.test.ts` | 15 tests |
+| `src/__tests__/variables/expander.test.ts` | 22 tests |
+| `src/__tests__/__mocks__/vscode.ts` | VS Code API mock for Jest |
+| `src/__tests__/fixtures/` | YAML fixture files for tests |
+
+#### Coverage (Phase 1)
+
+```
+All files      | 91.69% stmts | 82.94% branches | 95.12% funcs | 91.61% lines
+```
+
+All thresholds met (≥80% lines/functions, ≥75% branches).
 
 ---
 

@@ -1,0 +1,9 @@
+groups:
+  - id: grp-a
+    name: Group A
+    configs:
+      - id: cfg-duplicate
+        name: Config in A
+        buildSystem: cmake
+        target: target_a
+        runMode: run

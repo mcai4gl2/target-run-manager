@@ -1,0 +1,19 @@
+settings:
+  macros:
+    DATA_ROOT: "${workspaceFolder}/data/order-book"
+
+groups:
+  - id: grp-order-book
+    name: Order Book
+    configs:
+      - id: cfg-ob-run-debug
+        name: Run (debug)
+        buildSystem: cmake
+        target: order_book_main
+        kind: executable
+        buildConfig: debug
+        runMode: run
+        args: [--mode, sim]
+        env:
+          PORT: "${var:SERVER_PORT}"
+        preBuild: true

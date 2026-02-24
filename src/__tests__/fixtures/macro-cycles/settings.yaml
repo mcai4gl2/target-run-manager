@@ -1,0 +1,4 @@
+settings:
+  macros:
+    A: "${var:B}"
+    B: "${var:A}"

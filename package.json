@@ -1,0 +1,203 @@
+{
+  "name": "target-run-manager",
+  "displayName": "Target Run Manager",
+  "description": "Manage CMake/Bazel build targets in VS Code",
+  "version": "0.1.0",
+  "publisher": "target-run-manager",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onView:targetRunManager",
+    "workspaceContains:**/.vscode/target-manager*"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "targetRunManager.refresh",
+        "title": "Refresh",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "targetRunManager.run",
+        "title": "Run",
+        "icon": "$(play)"
+      },
+      {
+        "command": "targetRunManager.build",
+        "title": "Build",
+        "icon": "$(tools)"
+      },
+      {
+        "command": "targetRunManager.debug",
+        "title": "Debug",
+        "icon": "$(debug)"
+      },
+      {
+        "command": "targetRunManager.setActive",
+        "title": "Set as Active",
+        "icon": "$(star-empty)"
+      },
+      {
+        "command": "targetRunManager.addGroup",
+        "title": "Add Group",
+        "icon": "$(add)"
+      },
+      {
+        "command": "targetRunManager.addConfig",
+        "title": "Add Configuration",
+        "icon": "$(add)"
+      },
+      {
+        "command": "targetRunManager.editConfig",
+        "title": "Edit Configuration",
+        "icon": "$(edit)"
+      },
+      {
+        "command": "targetRunManager.deleteConfig",
+        "title": "Delete Configuration",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "targetRunManager.cloneConfig",
+        "title": "Clone Configuration",
+        "icon": "$(copy)"
+      },
+      {
+        "command": "targetRunManager.runActive",
+        "title": "Run Active Target"
+      },
+      {
+        "command": "targetRunManager.debugActive",
+        "title": "Debug Active Target"
+      },
+      {
+        "command": "targetRunManager.buildActive",
+        "title": "Build Active Target"
+      },
+      {
+        "command": "targetRunManager.rerunLast",
+        "title": "Re-run Last Command"
+      },
+      {
+        "command": "targetRunManager.switchActive",
+        "title": "Switch Active Target"
+      }
+    ],
+    "views": {
+      "targetRunManager": [
+        {
+          "id": "targetRunManagerView",
+          "name": "Targets"
+        }
+      ]
+    },
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "targetRunManager",
+          "title": "Target Run Manager",
+          "icon": "$(play)"
+        }
+      ]
+    },
+    "menus": {
+      "view/item/context": [
+        {
+          "command": "targetRunManager.run",
+          "when": "view == targetRunManagerView && viewItem == config",
+          "group": "inline@1"
+        },
+        {
+          "command": "targetRunManager.build",
+          "when": "view == targetRunManagerView && viewItem == config",
+          "group": "inline@2"
+        },
+        {
+          "command": "targetRunManager.debug",
+          "when": "view == targetRunManagerView && viewItem == config",
+          "group": "inline@3"
+        },
+        {
+          "command": "targetRunManager.editConfig",
+          "when": "view == targetRunManagerView && viewItem == config",
+          "group": "inline@4"
+        },
+        {
+          "command": "targetRunManager.cloneConfig",
+          "when": "view == targetRunManagerView && viewItem == config",
+          "group": "inline@5"
+        },
+        {
+          "command": "targetRunManager.deleteConfig",
+          "when": "view == targetRunManagerView && viewItem == config",
+          "group": "inline@6"
+        }
+      ]
+    },
+    "keybindings": [
+      {
+        "command": "targetRunManager.runActive",
+        "key": "ctrl+f5",
+        "when": "!inDebugMode"
+      },
+      {
+        "command": "targetRunManager.switchActive",
+        "key": "ctrl+shift+r"
+      },
+      {
+        "command": "targetRunManager.rerunLast",
+        "key": "ctrl+shift+l"
+      }
+    ],
+    "configuration": {
+      "title": "Target Run Manager",
+      "properties": {
+        "targetRunManager.cmake.defaultPreset": {
+          "type": "string",
+          "default": "",
+          "description": "Default CMake preset to use when none is specified"
+        },
+        "targetRunManager.cmake.autoRefreshOnChange": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically refresh targets when CMake configuration files change"
+        },
+        "targetRunManager.devcontainerAutoDetect": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically detect and use devcontainer settings"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "test": "jest --coverage",
+    "lint": "eslint src --ext ts",
+    "package": "vsce package",
+    "vscode:prepublish": "npm run compile"
+  },
+  "devDependencies": {
+    "@types/jest": "^29.0.0",
+    "@types/node": "^20.0.0",
+    "@types/vscode": "^1.85.0",
+    "@typescript-eslint/eslint-plugin": "^7.0.0",
+    "@typescript-eslint/parser": "^7.0.0",
+    "@vscode/vsce": "^2.0.0",
+    "eslint": "^8.0.0",
+    "jest": "^29.0.0",
+    "ts-jest": "^29.0.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.0.0"
+  },
+  "dependencies": {
+    "@types/js-yaml": "^4.0.0",
+    "js-yaml": "^4.0.0"
+  }
+}
