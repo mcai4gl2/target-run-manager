@@ -6,6 +6,7 @@ import * as vscode from 'vscode';
 import type { RunConfig, WorkspaceModel } from '../model/config';
 import type { BuildSystemProvider } from '../build/provider';
 import { CMakeBuildProvider } from '../build/cmake/provider';
+import { BazelBuildProvider } from '../build/bazel/provider';
 import { ManualBuildProvider } from '../build/manual/provider';
 import { expandConfig } from '../variables/expander';
 import type { BuiltinContext } from '../variables/builtins';
@@ -260,6 +261,8 @@ export class Runner {
     switch (config.buildSystem) {
       case 'cmake':
         return new CMakeBuildProvider(this.workspaceRoot);
+      case 'bazel':
+        return new BazelBuildProvider(this.workspaceRoot);
       case 'manual':
         return new ManualBuildProvider();
       default:

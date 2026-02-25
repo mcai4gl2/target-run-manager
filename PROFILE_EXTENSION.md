@@ -821,7 +821,7 @@ target-run-manager/
 | **Phase 2 — Config Editor** | Webview form editor, CRUD, clone, move to group, binary override field, macro editor | ✅ **COMPLETE** (2026-02-25) |
 | **Phase 3 — Analysis Mode** | Valgrind + perf runners, output dir management, post-process commands, `binaryOverride` for manual binaries | ✅ **COMPLETE** (2026-02-25) |
 | **Phase 4 — Debugger + DevContainer** | Direct `vscode.debug.startDebugging()` without touching `launch.json`, Docker exec wrapping | ✅ **COMPLETE** (2026-02-25) |
-| **Phase 5 — Bazel** | `bazel query` discovery, BazelBuildProvider, Bazel-specific config fields, BUILD file CodeLens | ⬜ Not started |
+| **Phase 5 — Bazel** | `bazel query` discovery, BazelBuildProvider, Bazel-specific config fields, BUILD file CodeLens | ✅ **COMPLETE** (2026-02-25) |
 | **Phase 6 — CodeLens + Import** | CMakeLists.txt + BUILD file CodeLens, import from `# vscode:` comments | ⬜ Not started |
 | **Phase 7 — Advanced** | Source scripts, compound configs, run history, preset/config matrix view, output capture, heaptrack/strace tools | ⬜ Not started |
 
@@ -996,6 +996,45 @@ All files         |   91.60 |    83.59 |   95.49 |   92.12
   devcontainer.ts |  100.00 |   100.00 |  100.00 |  100.00
  runner/          |  100.00 |   100.00 |  100.00 |  100.00
   launcher.ts     |  100.00 |   100.00 |  100.00 |  100.00
+```
+
+All thresholds met (≥80% lines/functions, ≥75% branches).
+
+### Phase 5 — Implementation Details
+
+**Completed 2026-02-25.** 332 unit tests passing (+71 vs Phase 4). ≥80% coverage maintained.
+
+#### Files Created / Modified
+
+| File | Change | Description |
+|---|---|---|
+| `src/build/bazel/query.ts` | Created | `parseBazelLabel` — parses `//pkg:target`, `//pkg`, `@ws//pkg:target` into `{ workspace, package, target, canonical }`. `isValidBazelLabel`. `parseBazelQueryOutput` — splits `bazel query --output=label` output, strips blanks/comments. `runBazelQuery` — wraps `execSync` with startup flags, `--output=label --noshow_progress`; returns `[]` on failure |
+| `src/build/bazel/discovery.ts` | Created | `discoverBazelTargets(opts)` — runs two queries (`.*_binary` and `.*_test` kinds), deduplicates labels, maps to typed `BuildTarget[]` with `bazel-bin/<pkg>/<target>` binary path. `resolveBazelBinaryPath(label, workspaceRoot)` — computes absolute bazel-bin path from a label |
+| `src/build/bazel/provider.ts` | Created | `BazelBuildProvider` implementing `BuildSystemProvider`: `discoverTargets` (caches), `refresh`, `resolveBinaryPath` (bazel-bin convention), `buildTarget` (spawns `bazel build`), `buildRunCommand` (direct binary or `bazel run --run_under`), `buildTestCommand` (`bazel test --test_output=all`). `buildBazelArgs` exported helper that places startup flags before the verb |
+| `src/runner/runner.ts` | Modified | Added `case 'bazel': return new BazelBuildProvider(this.workspaceRoot)` to `getProvider` |
+| `src/__tests__/build/bazel/query.test.ts` | Created | 30 tests: `parseBazelLabel` (all label formats, error cases), `isValidBazelLabel`, `parseBazelQueryOutput` (newlines, blanks, comments), `runBazelQuery` (mocked execSync — success, failure, startup flags, cwd) |
+| `src/__tests__/build/bazel/discovery.test.ts` | Created | 12 tests: `discoverBazelTargets` (empty, binary labels, test labels, deduplication, invalid labels), `resolveBazelBinaryPath` (valid/invalid labels) |
+| `src/__tests__/build/bazel/provider.test.ts` | Created | 29 tests: `buildBazelArgs` (all flags, startup order, run/test/build verbs), `buildRunCommand` (direct binary, runUnder, source scripts, env, args), `buildTestCommand`, `resolveBinaryPath`, `discoverTargets` + `refresh` (mocked), `buildTarget` (mocked spawn — success/failure/error) |
+
+#### Phase 5 Feature Summary
+
+- **Bazel label parser**: Handles all standard label formats including workspace-prefixed (`@ws//pkg:target`). Canonical form normalizes implicit targets.
+- **Target discovery**: Queries `kind(".*_binary", //...)` and `kind(".*_test", //...)` separately. Deduplicates and preserves kind. Returns `BuildTarget[]` with conventional `bazel-bin` path.
+- **Binary resolution**: Uses `<workspaceRoot>/bazel-bin/<package>/<target>` convention. No `bazel cquery` needed for the common case.
+- **Build command**: `bazel [startup] build [--config=<c>] [extraBuildFlags] <label>`
+- **Run command**: Direct binary invocation (after build) or `bazel run --run_under=<tool>` when `bazel.runUnder` is set.
+- **Test command**: `bazel [startup] test [--config=<c>] --test_output=all [--test_filter=<f>] <label>`
+- **Startup flags**: Placed before the Bazel verb per CLI argument order requirements.
+- **Runner integration**: `getProvider` now returns `BazelBuildProvider` for `buildSystem: 'bazel'` configs.
+
+#### Coverage (Phase 5)
+
+```
+All files         |   92.50 |    85.17 |   94.81 |   93.05
+ build/bazel/     |   97.01 |    95.83 |   91.66 |   97.65
+  discovery.ts    |   96.66 |    80.00 |  100.00 |  100.00
+  provider.ts     |   97.05 |    96.66 |   86.66 |   97.01
+  query.ts        |   97.22 |   100.00 |  100.00 |   97.22
 ```
 
 All thresholds met (≥80% lines/functions, ≥75% branches).
