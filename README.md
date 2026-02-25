@@ -365,6 +365,53 @@ npm test           # Jest (449 tests, ≥80% coverage required)
 
 ---
 
+## Releasing
+
+### One-time setup
+
+1. Install `vsce` globally (or use `npx`):
+   ```bash
+   npm install -g @vscode/vsce
+   ```
+2. Create a Personal Access Token at `dev.azure.com` (organization: `mcai4gl2`, scope: **Marketplace → Manage**).
+3. Log in once:
+   ```bash
+   vsce login mcai4gl2
+   # paste your PAT when prompted
+   ```
+
+### Publishing a new version
+
+```bash
+# 1. Bump the version (patch | minor | major)
+npm version patch          # e.g. 0.1.0 → 0.1.1
+
+# 2. Verify everything is green
+npm run lint
+npx tsc --noEmit
+npm test
+
+# 3. Package (produces target-run-manager-<version>.vsix)
+npm run package
+
+# 4. Smoke-test locally
+code --install-extension target-run-manager-*.vsix
+
+# 5. Publish to the VS Code Marketplace
+vsce publish
+
+# 6. Tag and push so GitHub Actions also records the release
+git push && git push --tags
+```
+
+To publish to **Open VSX** as well, install `ovsx` and run:
+```bash
+npm install -g ovsx
+ovsx publish target-run-manager-*.vsix --pat <OVSX_PAT>
+```
+
+---
+
 ## License
 
 MIT — see [LICENSE](LICENSE).

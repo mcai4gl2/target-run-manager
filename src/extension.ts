@@ -47,7 +47,7 @@ export function activate(context: vscode.ExtensionContext): void {
   function loadConfigs(): void {
     const files = discoverConfigFiles(workspaceRoot!);
     if (files.length === 0) {
-      const empty: WorkspaceModel = { groups: [], ungrouped: [], settings: {}, fileMacros: new Map() };
+      const empty: WorkspaceModel = { groups: [], ungrouped: [], compounds: [], settings: {}, fileMacros: new Map() };
       outputChannel.appendLine('[Target Run Manager] No config files found.');
       currentModel = empty;
       treeProvider.setModel(empty);
