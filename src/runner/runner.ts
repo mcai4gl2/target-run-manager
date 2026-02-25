@@ -1,15 +1,15 @@
 /**
- * Main runner — orchestrates: build → resolve binary → run/test in terminal.
+ * Main runner — orchestrates: build → resolve binary → run/test/analyze in terminal.
  */
 
 import * as vscode from 'vscode';
-import * as path from 'path';
 import type { RunConfig, WorkspaceModel } from '../model/config';
 import type { BuildSystemProvider } from '../build/provider';
 import { CMakeBuildProvider } from '../build/cmake/provider';
 import { ManualBuildProvider } from '../build/manual/provider';
 import { expandConfig } from '../variables/expander';
 import type { BuiltinContext } from '../variables/builtins';
+import { buildAnalysisCommands } from '../analysis/analyzer';
 import { TaskRunner } from './taskRunner';
 
 export class Runner {
@@ -28,7 +28,7 @@ export class Runner {
     this.model = model;
   }
 
-  /** Run a config (build if requested, then execute). */
+  /** Run a config (build if requested, then execute in appropriate mode). */
   async runConfig(rawConfig: RunConfig): Promise<void> {
     if (!this.model) {
       vscode.window.showErrorMessage('Target Run Manager: no config model loaded');
@@ -63,9 +63,12 @@ export class Runner {
       case 'test':
         await this.executeTest(expanded, provider);
         break;
+      case 'analyze':
+        await this.executeAnalyze(expanded, provider);
+        break;
       case 'coverage':
         vscode.window.showWarningMessage(
-          `[Target Run Manager] Run mode "coverage" coming in a future phase`,
+          '[Target Run Manager] Run mode "coverage" coming in a future phase',
         );
         break;
       default:
@@ -99,21 +102,11 @@ export class Runner {
     }
   }
 
+  // ---- Private execute methods ----
+
   private async executeRun(config: RunConfig, provider: BuildSystemProvider): Promise<void> {
-    let binaryPath: string | undefined;
-
-    if (config.binaryOverride) {
-      binaryPath = config.binaryOverride;
-    } else {
-      binaryPath = await provider.resolveBinaryPath(config);
-    }
-
-    if (!binaryPath) {
-      vscode.window.showErrorMessage(
-        `[Target Run Manager] Cannot resolve binary for "${config.name}". Try building first.`,
-      );
-      return;
-    }
+    const binaryPath = await this.resolveBinary(config, provider);
+    if (!binaryPath) { return; }
 
     const command = provider.buildRunCommand(config, binaryPath);
     this.taskRunner.runInTerminal({
@@ -127,7 +120,9 @@ export class Runner {
   private async executeTest(config: RunConfig, provider: BuildSystemProvider): Promise<void> {
     const command = provider.buildTestCommand(config);
     if (!command) {
-      vscode.window.showErrorMessage(`[Target Run Manager] Cannot build test command for "${config.name}"`);
+      vscode.window.showErrorMessage(
+        `[Target Run Manager] Cannot build test command for "${config.name}"`,
+      );
       return;
     }
 
@@ -139,6 +134,65 @@ export class Runner {
     });
   }
 
+  private async executeAnalyze(config: RunConfig, provider: BuildSystemProvider): Promise<void> {
+    let result;
+    try {
+      result = await buildAnalysisCommands(config, provider, {
+        workspaceFolder: this.workspaceRoot,
+        flamegraphScript: this.model?.settings.analysis?.flamegraphScript,
+      });
+    } catch (e) {
+      vscode.window.showErrorMessage(
+        `[Target Run Manager] Analysis setup failed: ${(e as Error).message}`,
+      );
+      return;
+    }
+
+    this.outputChannel.appendLine(
+      `[Target Run Manager] Analysis output dir: ${result.outputDir}`,
+    );
+
+    // Run main analysis command
+    this.taskRunner.runInTerminal({
+      command: result.command,
+      title: result.terminalTitle,
+      cwd: config.cwd ?? this.workspaceRoot,
+      mode: config.terminal ?? 'dedicated',
+    });
+
+    // Run post-process in a second terminal if present
+    if (result.postProcess) {
+      // Small delay so the user sees the two terminals as distinct steps
+      setTimeout(() => {
+        this.taskRunner.runInTerminal({
+          command: result.postProcess!,
+          title: `Post-process: ${config.name}`,
+          cwd: result.outputDir,
+          mode: 'dedicated',
+        });
+      }, 500);
+    }
+  }
+
+  // ---- Helpers ----
+
+  private async resolveBinary(
+    config: RunConfig,
+    provider: BuildSystemProvider,
+  ): Promise<string | undefined> {
+    if (config.binaryOverride) {
+      return config.binaryOverride;
+    }
+    const resolved = await provider.resolveBinaryPath(config);
+    if (!resolved) {
+      vscode.window.showErrorMessage(
+        `[Target Run Manager] Cannot resolve binary for "${config.name}". Try building first.`,
+      );
+      return undefined;
+    }
+    return resolved;
+  }
+
   private getProvider(config: RunConfig): BuildSystemProvider {
     switch (config.buildSystem) {
       case 'cmake':
@@ -146,7 +200,6 @@ export class Runner {
       case 'manual':
         return new ManualBuildProvider();
       default:
-        // Default to manual for unknown build systems
         return new ManualBuildProvider();
     }
   }

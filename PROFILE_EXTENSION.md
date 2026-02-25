@@ -819,7 +819,7 @@ target-run-manager/
 |---|---|---|
 | **Phase 1 — CMake Core** | Config directory loader (multi-file YAML/JSON, merge, watch), variable/macro expander, CMake target discovery (File API), TreeView with groups/configs, Run + Build actions in terminal | ✅ **COMPLETE** (2026-02-25) |
 | **Phase 2 — Config Editor** | Webview form editor, CRUD, clone, move to group, binary override field, macro editor | ✅ **COMPLETE** (2026-02-25) |
-| **Phase 3 — Analysis Mode** | Valgrind + perf runners, output dir management, post-process commands, `binaryOverride` for manual binaries | ⬜ Not started |
+| **Phase 3 — Analysis Mode** | Valgrind + perf runners, output dir management, post-process commands, `binaryOverride` for manual binaries | ✅ **COMPLETE** (2026-02-25) |
 | **Phase 4 — Debugger + DevContainer** | Direct `vscode.debug.startDebugging()` without touching `launch.json`, Docker exec wrapping | ⬜ Not started |
 | **Phase 5 — Bazel** | `bazel query` discovery, BazelBuildProvider, Bazel-specific config fields, BUILD file CodeLens | ⬜ Not started |
 | **Phase 6 — CodeLens + Import** | CMakeLists.txt + BUILD file CodeLens, import from `# vscode:` comments | ⬜ Not started |
@@ -907,6 +907,59 @@ All thresholds met (≥80% lines/functions, ≥75% branches).
 - **Group management**: Add Group (prompted name → generates id), Rename Group, Delete Group (refuses if non-empty unless forced).
 - **Analysis Config section**: Conditionally shown when runMode=analyze. Supports all 7 tools with dynamic subtool dropdown (valgrind sub-tools, perf sub-tools), custom command template field.
 - **Macros editor**: Key-value table for config-level macro overrides.
+
+### Phase 3 — Implementation Details
+
+**Completed 2026-02-25.** 213 unit tests passing (+93 vs Phase 2). ≥80% coverage maintained.
+
+#### Files Created / Modified
+
+| File | Change | Description |
+|---|---|---|
+| `src/analysis/output.ts` | Created | `resolveOutputDir` (expands `${date}`, `${datetime}`, `${workspaceFolder}`), `ensureOutputDir` (mkdirSync recursive), `defaultOutputDir` (workspace/out/analysis/date/configId/tool) |
+| `src/analysis/tools/valgrind.ts` | Created | Valgrind command builder: 5 sub-tools (memcheck, callgrind, massif, helgrind, drd) each with preset flags. Returns `{ command, outputFile? }` |
+| `src/analysis/tools/perf.ts` | Created | Perf command builder: record (with flamegraph postProcess), stat (-e cycles,instructions,cache-misses), annotate (record + perf annotate postProcess) |
+| `src/analysis/tools/heaptrack.ts` | Created | Heaptrack command builder: `heaptrack --output <outputDir>/heaptrack.zst [toolArgs] binary args` |
+| `src/analysis/tools/strace.ts` | Created | Shared builder for strace and ltrace: `-o <outputDir>/strace.log\|ltrace.log [toolArgs] binary args` |
+| `src/analysis/tools/gprof.ts` | Created | gprof builder: main command = binary (produces gmon.out in cwd), postProcess = `gprof <binary> <cwd>/gmon.out > <outputDir>/gprof-report.txt` |
+| `src/analysis/tools/custom.ts` | Created | Custom template expander: replaces `{binary}`, `{args}`, `{env}`, `{outputDir}`, `{cwd}` in `customCommand` string |
+| `src/analysis/analyzer.ts` | Created | Main dispatcher: resolves binary (analyzeConfig.binaryOverride > config.binaryOverride > provider), creates output dir, dispatches to tool builder, prepends source scripts + env vars, returns `{ command, postProcess?, outputDir, outputFile?, terminalTitle }` |
+| `src/runner/runner.ts` | Modified | Added `executeAnalyze`: calls `buildAnalysisCommands`, runs main command in terminal, runs postProcess in a second terminal (500ms delay) |
+| `src/__tests__/analysis/output.test.ts` | Created | 10 tests: resolveOutputDir placeholder expansion, ensureOutputDir, defaultOutputDir |
+| `src/__tests__/analysis/tools/valgrind.test.ts` | Created | Tests for all 5 valgrind sub-tools, preset flags, toolArgs, outputFile |
+| `src/__tests__/analysis/tools/perf.test.ts` | Created | Tests for record/stat/annotate, flamegraph script path, postProcess format |
+| `src/__tests__/analysis/tools/heaptrack.test.ts` | Created | 6 tests: command prefix, --output flag, binary inclusion, toolArgs, no binary args |
+| `src/__tests__/analysis/tools/strace.test.ts` | Created | Tests for strace and ltrace: command prefix, -o flag, binary/args, toolArgs |
+| `src/__tests__/analysis/tools/gprof.test.ts` | Created | 6 tests: binary runs directly, no gprof prefix, postProcess format, outputFile, gmon.out in cwd, toolArgs |
+| `src/__tests__/analysis/tools/custom.test.ts` | Created | Tests for placeholder expansion, shell quoting, missing template error |
+| `src/__tests__/analysis/analyzer.test.ts` | Created | 16 tests: missing analyzeConfig, unresolved binary, binary resolution priority, tool dispatch, output dir, source scripts, env vars, custom postProcess override |
+
+#### Phase 3 Feature Summary
+
+- **7 analysis tools**: valgrind (memcheck/callgrind/massif/helgrind/drd), perf (record/stat/annotate), heaptrack, strace, ltrace, gprof, custom
+- **Output directory management**: date/datetime/workspaceFolder expansion, auto-create with `mkdirSync`, configurable override via `analyzeConfig.outputDir`
+- **Post-process commands**: perf record → flamegraph pipeline, gprof → gprof-report.txt. Custom `analyzeConfig.postProcess` overrides tool-derived postProcess.
+- **Binary resolution priority**: `analyzeConfig.binaryOverride` > `config.binaryOverride` > `provider.resolveBinaryPath(config)`
+- **Terminal integration**: main command in primary terminal, postProcess in a second terminal (500ms delay to wait for output file)
+- **Custom tool**: template string with `{binary}`, `{args}`, `{env}`, `{outputDir}`, `{cwd}` placeholders
+
+#### Coverage (Phase 3)
+
+```
+All files       |   91.04 |    82.45 |   94.84 |   91.58
+ analysis/      |   90.12 |    84.00 |  100.00 |   90.00
+  analyzer.ts   |   86.20 |    84.00 |  100.00 |   85.96
+  output.ts     |  100.00 |   100.00 |  100.00 |  100.00
+ analysis/tools |   95.71 |    88.88 |  100.00 |   95.71
+  custom.ts     |  100.00 |    80.00 |  100.00 |  100.00
+  gprof.ts      |  100.00 |   100.00 |  100.00 |  100.00
+  heaptrack.ts  |  100.00 |   100.00 |  100.00 |  100.00
+  perf.ts       |   88.88 |    80.00 |  100.00 |   88.88
+  strace.ts     |  100.00 |   100.00 |  100.00 |  100.00
+  valgrind.ts   |   95.65 |    93.33 |  100.00 |   95.65
+```
+
+All thresholds met (≥80% lines/functions, ≥75% branches).
 
 ---
 
