@@ -8,7 +8,7 @@
  * - fileMacros: Each file's settings.macros stored by file path.
  */
 
-import type { RawFile, WorkspaceModel, Group, Settings } from '../model/config';
+import type { RawFile, WorkspaceModel, Group, Settings, CompoundConfig } from '../model/config';
 
 export interface MergeWarning {
   message: string;
@@ -25,12 +25,15 @@ export function mergeFiles(rawFiles: RawFile[]): MergeResult {
   const model: WorkspaceModel = {
     groups: [],
     ungrouped: [],
+    compounds: [],
     settings: {},
     fileMacros: new Map(),
   };
 
   // Track all config ids to detect duplicates
   const seenConfigIds = new Map<string, string>(); // id -> first file
+  // Track compound ids to detect duplicates
+  const seenCompoundIds = new Set<string>();
   // Track group ids to merge
   const groupsById = new Map<string, Group>();
   const groupOrder: string[] = [];
@@ -71,6 +74,19 @@ export function mergeFiles(rawFiles: RawFile[]): MergeResult {
         seenConfigIds.set(rawConfig.id, raw._filePath);
         group.configs.push({ ...rawConfig, _sourceFile: raw._filePath } as Group['configs'][0]);
       }
+    }
+
+    // Merge compounds (deduplicate by id; first occurrence wins)
+    for (const rawCompound of raw.compounds ?? []) {
+      if (seenCompoundIds.has(rawCompound.id)) { continue; }
+      seenCompoundIds.add(rawCompound.id);
+      model.compounds.push({
+        id: rawCompound.id,
+        name: rawCompound.name ?? rawCompound.id,
+        configs: rawCompound.configs ?? [],
+        order: rawCompound.order ?? 'sequential',
+        _sourceFile: raw._filePath,
+      } as CompoundConfig);
     }
 
     // Merge ungrouped

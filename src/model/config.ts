@@ -38,6 +38,20 @@ export interface BazelConfig {
   runUnder?: string;
 }
 
+/**
+ * A compound config runs several individual configs in sequence or in parallel.
+ * Config IDs that cannot be resolved at run time are silently skipped.
+ */
+export interface CompoundConfig {
+  id: string;
+  name: string;
+  /** Ordered list of RunConfig IDs to execute. */
+  configs: string[];
+  order: 'sequential' | 'parallel';
+  /** Source file this compound was loaded from */
+  _sourceFile?: string;
+}
+
 /** A single run/debug/test/analyze configuration for a target. */
 export interface RunConfig {
   id: string;
@@ -62,6 +76,11 @@ export interface RunConfig {
   template?: string;
   /** If template is set, these override the template's fields */
   overrides?: Partial<RunConfig>;
+  /**
+   * If set, terminal output (stdout + stderr) is captured to this file path
+   * via `2>&1 | tee <captureOutput>`.
+   */
+  captureOutput?: string;
   /**
    * Force DevContainer on (true) or off (false) for this config.
    * When absent, inherits the global devcontainerAutoDetect setting.
@@ -114,6 +133,8 @@ export interface WorkspaceModel {
   version?: number;
   groups: Group[];
   ungrouped: RunConfig[];
+  /** Compound configs that run multiple RunConfigs in sequence or parallel. */
+  compounds: CompoundConfig[];
   settings: Settings;
   /** Macros keyed by source file path, for scope resolution */
   fileMacros: Map<string, Record<string, string>>;
@@ -124,6 +145,7 @@ export interface RawFile {
   version?: number;
   groups?: RawGroup[];
   ungrouped?: RawRunConfig[];
+  compounds?: Array<Partial<CompoundConfig> & { id: string }>;
   settings?: Settings;
   /** Path of the file this was loaded from */
   _filePath: string;

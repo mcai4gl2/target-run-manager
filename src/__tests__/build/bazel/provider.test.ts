@@ -319,3 +319,45 @@ describe('BazelBuildProvider.buildTarget', () => {
     expect(result.success).toBe(false);
   });
 });
+
+// ---------------------------------------------------------------------------
+// BazelBuildProvider.buildCoverageCommand
+// ---------------------------------------------------------------------------
+
+describe('BazelBuildProvider.buildCoverageCommand', () => {
+  const provider = new BazelBuildProvider(WORKSPACE);
+
+  it('starts with bazel coverage', () => {
+    const cmd = provider.buildCoverageCommand(makeRC({ runMode: 'coverage' }), '/ignored', '/ignored');
+    expect(cmd).toMatch(/^bazel(\s+\S+)?\s+coverage/);
+  });
+
+  it('includes --collect_code_coverage flag', () => {
+    const cmd = provider.buildCoverageCommand(makeRC({ runMode: 'coverage' }), '/ignored', '/ignored');
+    expect(cmd).toContain('--collect_code_coverage');
+  });
+
+  it('includes the target label', () => {
+    const cmd = provider.buildCoverageCommand(makeRC({ target: '//src/app:tests' }), '/ignored', '/ignored');
+    expect(cmd).toContain('//src/app:tests');
+  });
+
+  it('includes --test_output=all', () => {
+    const cmd = provider.buildCoverageCommand(makeRC({ runMode: 'coverage' }), '/ignored', '/ignored');
+    expect(cmd).toContain('--test_output=all');
+  });
+
+  it('includes --config when buildConfig is set', () => {
+    const cmd = provider.buildCoverageCommand(makeRC({ buildConfig: 'dbg' }), '/ignored', '/ignored');
+    expect(cmd).toContain('--config=dbg');
+  });
+
+  it('includes --test_filter when set', () => {
+    const cmd = provider.buildCoverageCommand(
+      makeRC({ bazel: { testFilter: 'SuiteA' } }),
+      '/ignored',
+      '/ignored',
+    );
+    expect(cmd).toContain('--test_filter=SuiteA');
+  });
+});

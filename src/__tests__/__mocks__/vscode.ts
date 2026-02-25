@@ -35,6 +35,7 @@ const vscode = {
       show: jest.fn(),
       dispose: jest.fn(),
     }),
+    terminals: [] as unknown[],
   },
   commands: {
     registerCommand: jest.fn(),

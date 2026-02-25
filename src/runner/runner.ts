@@ -3,7 +3,7 @@
  */
 
 import * as vscode from 'vscode';
-import type { RunConfig, WorkspaceModel } from '../model/config';
+import type { RunConfig, CompoundConfig, WorkspaceModel } from '../model/config';
 import type { BuildSystemProvider } from '../build/provider';
 import { CMakeBuildProvider } from '../build/cmake/provider';
 import { BazelBuildProvider } from '../build/bazel/provider';
@@ -13,6 +13,9 @@ import type { BuiltinContext } from '../variables/builtins';
 import { buildAnalysisCommands } from '../analysis/analyzer';
 import { launchDebugSession } from './launcher';
 import type { DevContainerManager } from '../container/devcontainer';
+import { RunHistoryManager } from './history';
+import { executeCompound } from './compound';
+import { defaultOutputDir } from '../analysis/output';
 import { TaskRunner } from './taskRunner';
 
 export class Runner {
@@ -21,16 +24,19 @@ export class Runner {
   private model: WorkspaceModel | undefined;
   private workspaceRoot: string;
   private devContainer: DevContainerManager | undefined;
+  readonly history: RunHistoryManager;
 
   constructor(
     workspaceRoot: string,
     outputChannel: vscode.OutputChannel,
     devContainer?: DevContainerManager,
+    history?: RunHistoryManager,
   ) {
     this.workspaceRoot = workspaceRoot;
     this.outputChannel = outputChannel;
     this.taskRunner = new TaskRunner();
     this.devContainer = devContainer;
+    this.history = history ?? new RunHistoryManager();
   }
 
   setModel(model: WorkspaceModel): void {
@@ -52,12 +58,23 @@ export class Runner {
       this.outputChannel.appendLine(`[Warning] ${w.message}`);
     }
 
+    // Record start time for history
+    const startedAt = new Date();
+    let buildStatus: 'success' | 'failed' | 'skipped' = 'skipped';
+
     // Build first if requested
     if (expanded.preBuild && expanded.buildSystem !== 'manual') {
       const buildResult = await provider.buildTarget(expanded, {
         appendLine: (line) => this.outputChannel.appendLine(line),
       });
+      buildStatus = buildResult.success ? 'success' : 'failed';
       if (!buildResult.success) {
+        this.history.add({
+          configId: rawConfig.id,
+          configName: rawConfig.name,
+          startedAt,
+          buildStatus,
+        });
         vscode.window.showErrorMessage(
           `[Target Run Manager] Build failed (exit code ${buildResult.exitCode})`,
         );
@@ -79,15 +96,44 @@ export class Runner {
         await this.executeAnalyze(expanded, provider);
         break;
       case 'coverage':
-        vscode.window.showWarningMessage(
-          '[Target Run Manager] Run mode "coverage" coming in a future phase',
-        );
+        await this.executeCoverage(expanded, provider);
         break;
       default:
         vscode.window.showWarningMessage(
           `[Target Run Manager] Run mode "${expanded.runMode}" not yet implemented`,
         );
     }
+
+    // Record to history (terminal-based runs don't yield exit codes without a PTY)
+    this.history.add({
+      configId: rawConfig.id,
+      configName: rawConfig.name,
+      startedAt,
+      buildStatus,
+    });
+  }
+
+  /** Run a compound config (sequential or parallel). */
+  async runCompound(compound: CompoundConfig): Promise<void> {
+    if (!this.model) {
+      vscode.window.showErrorMessage('Target Run Manager: no config model loaded');
+      return;
+    }
+    const model = this.model;
+    await executeCompound(compound, async (configId) => {
+      const allConfigs = [
+        ...model.ungrouped,
+        ...model.groups.flatMap((g) => g.configs),
+      ];
+      const config = allConfigs.find((c) => c.id === configId);
+      if (config) {
+        await this.runConfig(config);
+      } else {
+        this.outputChannel.appendLine(
+          `[Target Run Manager] Compound: config id "${configId}" not found, skipping`,
+        );
+      }
+    });
   }
 
   /** Build the target for a config without running it. */
@@ -115,6 +161,41 @@ export class Runner {
   }
 
   // ---- Private execute methods ----
+
+  private async executeCoverage(config: RunConfig, provider: BuildSystemProvider): Promise<void> {
+    const binaryPath = await this.resolveBinary(config, provider);
+    if (!binaryPath) { return; }
+
+    if (!provider.buildCoverageCommand) {
+      vscode.window.showWarningMessage(
+        `[Target Run Manager] Coverage mode is not supported by the "${provider.name}" provider`,
+      );
+      return;
+    }
+
+    const outputDir = defaultOutputDir(this.workspaceRoot, config.id, 'coverage');
+    const rawCommand = provider.buildCoverageCommand(config, binaryPath, outputDir);
+    if (!rawCommand) {
+      vscode.window.showWarningMessage(
+        `[Target Run Manager] Coverage mode is not supported for "${config.name}"`,
+      );
+      return;
+    }
+
+    const cwd = config.cwd ?? this.workspaceRoot;
+    const command = this.wrapIfContainer(
+      withCaptureOutput(rawCommand, config.captureOutput),
+      config,
+      cwd,
+    );
+
+    this.taskRunner.runInTerminal({
+      command,
+      title: `Coverage: ${config.name}`,
+      cwd,
+      mode: config.terminal ?? 'dedicated',
+    });
+  }
 
   private async executeDebug(config: RunConfig, provider: BuildSystemProvider): Promise<void> {
     const binaryPath = await this.resolveBinary(config, provider);
@@ -152,7 +233,11 @@ export class Runner {
 
     const cwd = config.cwd ?? this.workspaceRoot;
     const rawCommand = provider.buildRunCommand(config, binaryPath);
-    const command = this.wrapIfContainer(rawCommand, config, cwd);
+    const command = this.wrapIfContainer(
+      withCaptureOutput(rawCommand, config.captureOutput),
+      config,
+      cwd,
+    );
     this.taskRunner.runInTerminal({
       command,
       title: `Run: ${config.name}`,
@@ -171,7 +256,11 @@ export class Runner {
     }
 
     const cwd = config.cwd ?? this.workspaceRoot;
-    const command = this.wrapIfContainer(rawCommand, config, cwd);
+    const command = this.wrapIfContainer(
+      withCaptureOutput(rawCommand, config.captureOutput),
+      config,
+      cwd,
+    );
     this.taskRunner.runInTerminal({
       command,
       title: `Test: ${config.name}`,
@@ -280,4 +369,18 @@ export class Runner {
   dispose(): void {
     this.taskRunner.dispose();
   }
+}
+
+// ---------------------------------------------------------------------------
+// Module-level helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Optionally wrap a shell command to capture stdout+stderr to a file via `tee`.
+ * If captureFile is absent the original command is returned unchanged.
+ */
+export function withCaptureOutput(command: string, captureFile: string | undefined): string {
+  if (!captureFile) { return command; }
+  const safe = captureFile.replace(/'/g, "'\\''");
+  return `( ${command} ) 2>&1 | tee '${safe}'`;
 }

@@ -5,6 +5,7 @@ function makeModel(overrides: Partial<WorkspaceModel> = {}): WorkspaceModel {
   return {
     groups: [],
     ungrouped: [],
+    compounds: [],
     settings: {},
     fileMacros: new Map(),
     ...overrides,

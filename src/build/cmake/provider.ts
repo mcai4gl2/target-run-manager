@@ -131,6 +131,29 @@ export class CMakeBuildProvider implements BuildSystemProvider {
     return `ctest --test-dir ${shellQuote(buildDir)} ${parts.slice(1).join(' ')}`;
   }
 
+  /**
+   * Coverage run: execute the binary (which must have been compiled with
+   * coverage instrumentation), then generate an HTML report via gcovr.
+   *
+   * Assumes gcovr is available on PATH.  The report is written to
+   * `<outputDir>/coverage.html`.
+   */
+  buildCoverageCommand(
+    config: RunConfig,
+    binaryPath: string,
+    outputDir: string,
+  ): string {
+    const binaryCmd = [binaryPath, ...(config.args ?? []).map(shellQuote)].join(' ');
+    const gcovrCmd = [
+      'gcovr',
+      '--html-details',
+      shellQuote(`${outputDir}/coverage.html`),
+      '-r',
+      shellQuote(this.workspaceRoot),
+    ].join(' ');
+    return `${binaryCmd} && ${gcovrCmd}`;
+  }
+
   private getBuildDir(config: RunConfig): string {
     if (config.buildConfig) {
       return path.join(this.workspaceRoot, 'build', config.buildConfig);

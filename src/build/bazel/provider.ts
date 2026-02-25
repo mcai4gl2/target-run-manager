@@ -116,6 +116,20 @@ export class BazelBuildProvider implements BuildSystemProvider {
     const args = buildBazelArgs('test', config);
     return `bazel ${args.join(' ')}`;
   }
+
+  /**
+   * Coverage run: `bazel coverage --collect_code_coverage <label>`.
+   * The HTML report path is passed as a note in the command but Bazel
+   * generates it inside the bazel-out tree.
+   */
+  buildCoverageCommand(
+    config: RunConfig,
+    _binaryPath: string,
+    _outputDir: string,
+  ): string {
+    const args = buildBazelArgs('coverage', config);
+    return `bazel ${args.join(' ')}`;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -131,7 +145,7 @@ export class BazelBuildProvider implements BuildSystemProvider {
  * The returned array omits the leading `bazel` binary name.
  */
 export function buildBazelArgs(
-  verb: 'build' | 'run' | 'test',
+  verb: 'build' | 'run' | 'test' | 'coverage',
   config: RunConfig,
 ): string[] {
   const args: string[] = [];
@@ -158,12 +172,17 @@ export function buildBazelArgs(
     args.push(`--run_under=${config.bazel.runUnder}`);
   }
 
-  // test-only flags
-  if (verb === 'test') {
+  // test/coverage flags
+  if (verb === 'test' || verb === 'coverage') {
     args.push('--test_output=all');
     if (config.bazel?.testFilter) {
       args.push(`--test_filter=${config.bazel.testFilter}`);
     }
+  }
+
+  // coverage-only flag
+  if (verb === 'coverage') {
+    args.push('--collect_code_coverage');
   }
 
   // Target label

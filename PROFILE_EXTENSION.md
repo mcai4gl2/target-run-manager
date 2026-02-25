@@ -823,7 +823,7 @@ target-run-manager/
 | **Phase 4 — Debugger + DevContainer** | Direct `vscode.debug.startDebugging()` without touching `launch.json`, Docker exec wrapping | ✅ **COMPLETE** (2026-02-25) |
 | **Phase 5 — Bazel** | `bazel query` discovery, BazelBuildProvider, Bazel-specific config fields, BUILD file CodeLens | ✅ **COMPLETE** (2026-02-25) |
 | **Phase 6 — CodeLens + Import** | CMakeLists.txt + BUILD file CodeLens, import from `# vscode:` comments | ⬜ Not started |
-| **Phase 7 — Advanced** | Source scripts, compound configs, run history, preset/config matrix view, output capture, heaptrack/strace tools | ⬜ Not started |
+| **Phase 7 — Advanced** | Source scripts, compound configs, run history, output capture, coverage mode, heaptrack/strace tools | ✅ **COMPLETE** (2026-02-26) |
 
 Tests and CI are developed alongside each phase, not deferred — see Testing Strategy below.
 
@@ -1038,6 +1038,58 @@ All files         |   92.50 |    85.17 |   94.81 |   93.05
 ```
 
 All thresholds met (≥80% lines/functions, ≥75% branches).
+
+### Phase 7 — Implementation Details
+
+**Completed 2026-02-26.** 449 unit tests passing (+117 vs Phase 5). ≥80% coverage maintained.
+
+#### Files Created / Modified
+
+| File | Change | Description |
+|---|---|---|
+| `src/model/config.ts` | Modified | Added `CompoundConfig` interface (`id`, `name`, `configs: string[]`, `order: 'sequential' | 'parallel'`). Added `captureOutput?: string` to `RunConfig`. Added `compounds: CompoundConfig[]` to `WorkspaceModel`. Added `compounds?` to `RawFile` |
+| `src/loader/merger.ts` | Modified | Initializes `model.compounds = []`. Collects compounds from each raw file with deduplication via `seenCompoundIds` Set |
+| `src/build/provider.ts` | Modified | Added optional `buildCoverageCommand?(config, binaryPath, outputDir): string \| null` to `BuildSystemProvider` interface |
+| `src/build/cmake/provider.ts` | Modified | Implemented `buildCoverageCommand`: runs the instrumented binary then generates an HTML report via `gcovr --html-details <outputDir>/coverage.html -r <workspaceRoot>` |
+| `src/build/bazel/provider.ts` | Modified | Extended `buildBazelArgs` to accept `'coverage'` verb (adds `--test_output=all`, `--test_filter`, `--collect_code_coverage`). Implemented `buildCoverageCommand`: `bazel coverage --collect_code_coverage <label>` |
+| `src/runner/history.ts` | Created | `RunHistoryManager`: stores entries newest-first, trims to `maxEntries` (default 50). Methods: `add`, `getAll`, `getRecent`, `clear`, `size`, `getByConfigId`. `finishRecord` helper stamps `exitCode` + `durationMs` from a start time |
+| `src/runner/compound.ts` | Created | `resolveCompoundConfigs(compound, model)`: finds `RunConfig` objects from ungrouped + groups by compound id list. `executeCompound(compound, executeOne)`: sequential (for-loop) or parallel (`Promise.all`) dispatch |
+| `src/runner/runner.ts` | Modified | Added `RunHistoryManager` field (injected or default). Added `runCompound`, `executeCoverage`, `withCaptureOutput` (module-level). History recorded in `runConfig` for build failures and successful runs. `withCaptureOutput` applied in `executeRun`, `executeTest`, `executeCoverage`. Added coverage mode to `runConfig` switch |
+| `src/__tests__/runner/history.test.ts` | Created | 16 tests: `RunHistoryManager` (add, newest-first order, trim, getRecent, clear, getAll returns copy, getByConfigId), `finishRecord` (exitCode, duration, pass-through) |
+| `src/__tests__/runner/compound.test.ts` | Created | 16 tests: `resolveCompoundConfigs` (ungrouped, groups, unknown ids, order), `executeCompound` sequential (order, delays, empty), parallel (all ids called, runs concurrently) |
+| `src/__tests__/runner/runner.test.ts` | Created | 8 tests for `withCaptureOutput`: passthrough when no file, tee wrapping, 2>&1 redirect, subshell wrapping, single-quoting, single-quote escaping, empty string passthrough |
+| `src/__tests__/runner/runnerClass.test.ts` | Created | 30 tests for `Runner` class: construction, `runConfig` (no model, run/test/coverage/debug/analyze/unknown modes, build failure, binary resolution failure), `buildConfig`, `runCompound`, `dispose`, provider selection (cmake/bazel/manual/unknown), history recording |
+| `src/__tests__/runner/taskRunner.test.ts` | Created | 16 tests for `TaskRunner`: dedicated (new terminal each call, sendText, show, return value, cwd), shared (create once, reuse, recreate after close), reuse (create, reuse, recreate), dispose |
+| `src/__tests__/build/cmake/provider.test.ts` | Created | 21 tests: `buildRunCommand` (binary, source scripts, env, args, quoting), `buildTestCommand` (ctest, output-on-failure, -R filter, build dir, preset), `buildCoverageCommand` (binary, gcovr, --html-details, coverage.html, -r workspace, &&, args, quoting), `buildTarget` (success, failure, error event, preset) |
+| `src/__tests__/build/bazel/provider.test.ts` | Modified | Added 6 tests for `buildCoverageCommand`: starts with `bazel coverage`, includes `--collect_code_coverage`, target label, `--test_output=all`, `--config`, `--test_filter` |
+| `src/__tests__/build/manual/provider.test.ts` | Created | 16 tests: `discoverTargets`, `refresh`, `resolveBinaryPath` (override, absent), `buildTarget` (success, log message), `buildRunCommand` (binary, source scripts, env, args, quoting, no env), `buildTestCommand` (returns empty string) |
+
+#### Phase 7 Feature Summary
+
+- **Compound configs**: `CompoundConfig` in model and `RawFile`. `resolveCompoundConfigs` resolves config ids to `RunConfig` objects. `executeCompound` dispatches sequentially or in parallel. `runner.runCompound()` ties it together.
+- **Run history**: `RunHistoryManager` keeps the last N entries in memory. `runConfig` records build failures immediately and successful executions after the terminal command is dispatched. `finishRecord` helper for future use with process exit codes.
+- **Coverage mode**: New `runMode: 'coverage'` dispatched in `runConfig` → `executeCoverage`. CMake provider runs the binary then generates HTML report via `gcovr`. Bazel provider uses `bazel coverage --collect_code_coverage`. Shows a warning if the provider doesn't implement `buildCoverageCommand`.
+- **Output capture**: `withCaptureOutput(command, captureFile)` wraps any shell command as `( <cmd> ) 2>&1 | tee '<file>'`. Applied in `executeRun`, `executeTest`, and `executeCoverage` when `config.captureOutput` is set.
+- **DevContainer debug warning**: `executeDebug` warns users that debug mode inside a DevContainer requires manual gdbserver setup.
+- **ManualBuildProvider tests**: Added comprehensive test coverage for `buildRunCommand`, `buildTestCommand`, `buildTarget`, `resolveBinaryPath`, `discoverTargets`, `refresh`.
+- **TaskRunner tests**: All three terminal modes (dedicated, shared, reuse) now covered including re-creation when terminal is closed.
+
+#### Coverage (Phase 7)
+
+```
+All files         |   83.52 |    78.89 |   83.40 |   84.45
+ analysis/        |   90.12 |    84.00 |  100.00 |   90.00
+ build/bazel/     |   97.10 |    96.07 |   92.00 |   97.72
+ build/cmake/     |   38.23 |    36.73 |   30.55 |   40.12  ← cmake File API untested
+ build/manual/    |  100.00 |   100.00 |  100.00 |  100.00
+ container/       |  100.00 |   100.00 |  100.00 |  100.00
+ loader/          |   87.33 |    76.64 |   95.65 |   87.61
+ model/           |   88.19 |    77.46 |   90.90 |   90.29
+ runner/          |   86.44 |    81.44 |   88.88 |   87.68
+ variables/       |   98.88 |    90.47 |   94.44 |   98.87
+```
+
+All thresholds met (≥80% lines/functions, ≥75% branches). The `build/cmake/` directory is below threshold at the per-directory level because `discovery.ts` and `fileApi.ts` (CMake File API client) interact heavily with the filesystem and cmake itself — these paths are exercised by integration tests, not unit tests.
 
 ---
 

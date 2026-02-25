@@ -49,6 +49,19 @@ export interface BuildSystemProvider {
   buildTestCommand(config: RunConfig): string;
 
   /**
+   * Construct the shell command for a coverage run.
+   * Returns null if this provider does not support coverage mode.
+   *
+   * @param binaryPath  Resolved binary path (used by CMake provider).
+   * @param outputDir   Directory where the HTML report should be written.
+   */
+  buildCoverageCommand?(
+    config: RunConfig,
+    binaryPath: string,
+    outputDir: string,
+  ): string | null;
+
+  /**
    * Force-refresh the discovered targets.
    */
   refresh(): Promise<void>;
