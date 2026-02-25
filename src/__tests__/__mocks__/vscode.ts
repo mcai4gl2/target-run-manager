@@ -58,6 +58,12 @@ const vscode = {
   },
   StatusBarAlignment: { Left: 1, Right: 2 },
   MarkdownString: jest.fn().mockImplementation((s: string) => ({ value: s })),
+  debug: {
+    startDebugging: jest.fn().mockResolvedValue(true),
+    stopDebugging: jest.fn().mockResolvedValue(undefined),
+    onDidStartDebugSession: jest.fn().mockReturnValue({ dispose: jest.fn() }),
+    onDidTerminateDebugSession: jest.fn().mockReturnValue({ dispose: jest.fn() }),
+  },
 };
 
 module.exports = vscode;

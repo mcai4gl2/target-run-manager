@@ -820,7 +820,7 @@ target-run-manager/
 | **Phase 1 — CMake Core** | Config directory loader (multi-file YAML/JSON, merge, watch), variable/macro expander, CMake target discovery (File API), TreeView with groups/configs, Run + Build actions in terminal | ✅ **COMPLETE** (2026-02-25) |
 | **Phase 2 — Config Editor** | Webview form editor, CRUD, clone, move to group, binary override field, macro editor | ✅ **COMPLETE** (2026-02-25) |
 | **Phase 3 — Analysis Mode** | Valgrind + perf runners, output dir management, post-process commands, `binaryOverride` for manual binaries | ✅ **COMPLETE** (2026-02-25) |
-| **Phase 4 — Debugger + DevContainer** | Direct `vscode.debug.startDebugging()` without touching `launch.json`, Docker exec wrapping | ⬜ Not started |
+| **Phase 4 — Debugger + DevContainer** | Direct `vscode.debug.startDebugging()` without touching `launch.json`, Docker exec wrapping | ✅ **COMPLETE** (2026-02-25) |
 | **Phase 5 — Bazel** | `bazel query` discovery, BazelBuildProvider, Bazel-specific config fields, BUILD file CodeLens | ⬜ Not started |
 | **Phase 6 — CodeLens + Import** | CMakeLists.txt + BUILD file CodeLens, import from `# vscode:` comments | ⬜ Not started |
 | **Phase 7 — Advanced** | Source scripts, compound configs, run history, preset/config matrix view, output capture, heaptrack/strace tools | ⬜ Not started |
@@ -957,6 +957,45 @@ All files       |   91.04 |    82.45 |   94.84 |   91.58
   perf.ts       |   88.88 |    80.00 |  100.00 |   88.88
   strace.ts     |  100.00 |   100.00 |  100.00 |  100.00
   valgrind.ts   |   95.65 |    93.33 |  100.00 |   95.65
+```
+
+All thresholds met (≥80% lines/functions, ≥75% branches).
+
+### Phase 4 — Implementation Details
+
+**Completed 2026-02-25.** 261 unit tests passing (+48 vs Phase 3). ≥80% coverage maintained.
+
+#### Files Created / Modified
+
+| File | Change | Description |
+|---|---|---|
+| `src/runner/launcher.ts` | Created | `buildDebugConfig(config, binaryPath, options)` — builds an in-memory `cppdbg` `DebugConfiguration` (type, request, program, args, cwd, env as name/value array, MIMode, stopAtEntry, setupCommands with pretty-printing, optional miDebuggerPath). `launchDebugSession()` — calls `vscode.debug.startDebugging()` directly; warns if sourceScripts are present (not supported by cppdbg) |
+| `src/container/devcontainer.ts` | Created | `isInsideDevContainer()` — checks `IN_DEV_CONTAINER` / `REMOTE_CONTAINERS` env vars. `findRunningContainers(nameFilter?)` — queries `docker ps`, parses id+name, optional name substring filter, returns `[]` on failure. `wrapWithDockerExec(cmd, id, workdir, user)` — wraps with `docker exec -u <user> -w <workdir> <id> bash -c '...'` (single-quote–safe). `DevContainerManager` — stateful class with `setContainer`, `detect` (async, uses env+docker ps), `isActive`, `containerId`, `containerName`, `wrapCommand` |
+| `src/model/config.ts` | Modified | Added `devcontainer?: boolean` to `RunConfig` (per-config force enable/disable). Added `debugger?: { miMode?, debuggerPath?, stopAtEntry? }` to `Settings`. Added `devcontainerName?: string` to `Settings` |
+| `src/runner/runner.ts` | Modified | Added optional `devContainer: DevContainerManager` constructor parameter. Added `executeDebug` — resolves binary, warns if devcontainer+debug requested (requires gdbserver), calls `launchDebugSession` with debugger settings from `model.settings.debugger`. Added `wrapIfContainer` helper — respects per-config `devcontainer` flag and global `devcontainerAutoDetect` setting. Updated `executeRun`, `executeTest`, `executeAnalyze` to wrap commands via `wrapIfContainer` |
+| `src/__tests__/__mocks__/vscode.ts` | Modified | Added `debug` mock: `startDebugging`, `stopDebugging`, `onDidStartDebugSession`, `onDidTerminateDebugSession` |
+| `src/__tests__/runner/launcher.test.ts` | Created | 22 tests: `buildDebugConfig` (all fields), `launchDebugSession` (calls startDebugging, passes config, sourceScripts warning, no warning when absent/empty) |
+| `src/__tests__/container/devcontainer.test.ts` | Created | 26 tests: `isInsideDevContainer` (env vars), `wrapWithDockerExec` (format, user, escaping, -w flag, bash -c), `findRunningContainers` (parsing, filtering, error handling), `DevContainerManager` (setContainer, detect, wrapCommand) |
+
+#### Phase 4 Feature Summary
+
+- **Debug mode**: `runMode: debug` now dispatches to `executeDebug` which calls `vscode.debug.startDebugging()` with an in-memory `cppdbg` configuration. No `launch.json` file is touched.
+- **GDB / LLDB**: Configurable via `settings.debugger.miMode` (`'gdb'` | `'lldb'`). Defaults to `'gdb'`. Custom debugger binary path via `settings.debugger.debuggerPath`.
+- **Environment variables**: Config's `env` record is converted to the `[{ name, value }]` format required by `cppdbg`.
+- **Pretty-printing**: Always adds `-enable-pretty-printing` `setupCommand` with `ignoreFailures: true`.
+- **DevContainer auto-detect**: `DevContainerManager.detect()` checks env vars then `docker ps`. Container ID is captured for command wrapping.
+- **Per-config DevContainer control**: `devcontainer: true` forces wrapping; `devcontainer: false` bypasses it even when globally enabled.
+- **Command wrapping**: `run`, `test`, and `analyze` commands are wrapped with `docker exec -u vscode -w <cwd> <containerId> bash -c '...'` when DevContainer is active.
+- **Debug + DevContainer warning**: Warns the user that devcontainer+debug requires manual gdbserver setup (out of scope for Phase 4).
+
+#### Coverage (Phase 4)
+
+```
+All files         |   91.60 |    83.59 |   95.49 |   92.12
+ container/       |  100.00 |   100.00 |  100.00 |  100.00
+  devcontainer.ts |  100.00 |   100.00 |  100.00 |  100.00
+ runner/          |  100.00 |   100.00 |  100.00 |  100.00
+  launcher.ts     |  100.00 |   100.00 |  100.00 |  100.00
 ```
 
 All thresholds met (≥80% lines/functions, ≥75% branches).

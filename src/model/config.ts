@@ -62,6 +62,11 @@ export interface RunConfig {
   template?: string;
   /** If template is set, these override the template's fields */
   overrides?: Partial<RunConfig>;
+  /**
+   * Force DevContainer on (true) or off (false) for this config.
+   * When absent, inherits the global devcontainerAutoDetect setting.
+   */
+  devcontainer?: boolean;
   /** Source file this config was loaded from */
   _sourceFile?: string;
 }
@@ -86,6 +91,16 @@ export interface Settings {
     autoRefreshOnChange?: boolean;
   };
   devcontainerAutoDetect?: boolean;
+  /** Name substring used to identify the Dev Container in `docker ps` output. */
+  devcontainerName?: string;
+  debugger?: {
+    /** GDB or LLDB. Defaults to 'gdb'. */
+    miMode?: 'gdb' | 'lldb';
+    /** Absolute path to the debugger binary. */
+    debuggerPath?: string;
+    /** Stop at the program entry point. */
+    stopAtEntry?: boolean;
+  };
   analysis?: {
     defaultOutputDir?: string;
     flamegraphScript?: string;

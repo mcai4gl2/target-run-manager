@@ -10,6 +10,8 @@ import { ManualBuildProvider } from '../build/manual/provider';
 import { expandConfig } from '../variables/expander';
 import type { BuiltinContext } from '../variables/builtins';
 import { buildAnalysisCommands } from '../analysis/analyzer';
+import { launchDebugSession } from './launcher';
+import type { DevContainerManager } from '../container/devcontainer';
 import { TaskRunner } from './taskRunner';
 
 export class Runner {
@@ -17,11 +19,17 @@ export class Runner {
   private outputChannel: vscode.OutputChannel;
   private model: WorkspaceModel | undefined;
   private workspaceRoot: string;
+  private devContainer: DevContainerManager | undefined;
 
-  constructor(workspaceRoot: string, outputChannel: vscode.OutputChannel) {
+  constructor(
+    workspaceRoot: string,
+    outputChannel: vscode.OutputChannel,
+    devContainer?: DevContainerManager,
+  ) {
     this.workspaceRoot = workspaceRoot;
     this.outputChannel = outputChannel;
     this.taskRunner = new TaskRunner();
+    this.devContainer = devContainer;
   }
 
   setModel(model: WorkspaceModel): void {
@@ -59,6 +67,9 @@ export class Runner {
     switch (expanded.runMode) {
       case 'run':
         await this.executeRun(expanded, provider);
+        break;
+      case 'debug':
+        await this.executeDebug(expanded, provider);
         break;
       case 'test':
         await this.executeTest(expanded, provider);
@@ -104,32 +115,66 @@ export class Runner {
 
   // ---- Private execute methods ----
 
+  private async executeDebug(config: RunConfig, provider: BuildSystemProvider): Promise<void> {
+    const binaryPath = await this.resolveBinary(config, provider);
+    if (!binaryPath) { return; }
+
+    if (config.devcontainer && this.devContainer?.isActive) {
+      vscode.window.showWarningMessage(
+        '[Target Run Manager] Debug mode inside a DevContainer requires gdbserver setup. ' +
+        'Use run mode instead, or configure gdbserver manually.',
+      );
+      return;
+    }
+
+    const debuggerSettings = this.model?.settings.debugger;
+    const folders = vscode.workspace.workspaceFolders;
+    const folder = folders && folders.length > 0 ? folders[0] : undefined;
+
+    const success = await launchDebugSession(config, binaryPath, folder, {
+      workspaceFolder: this.workspaceRoot,
+      miMode: debuggerSettings?.miMode ?? 'gdb',
+      debuggerPath: debuggerSettings?.debuggerPath,
+      stopAtEntry: debuggerSettings?.stopAtEntry,
+    });
+
+    if (!success) {
+      vscode.window.showErrorMessage(
+        `[Target Run Manager] Failed to start debug session for "${config.name}"`,
+      );
+    }
+  }
+
   private async executeRun(config: RunConfig, provider: BuildSystemProvider): Promise<void> {
     const binaryPath = await this.resolveBinary(config, provider);
     if (!binaryPath) { return; }
 
-    const command = provider.buildRunCommand(config, binaryPath);
+    const cwd = config.cwd ?? this.workspaceRoot;
+    const rawCommand = provider.buildRunCommand(config, binaryPath);
+    const command = this.wrapIfContainer(rawCommand, config, cwd);
     this.taskRunner.runInTerminal({
       command,
       title: `Run: ${config.name}`,
-      cwd: config.cwd ?? this.workspaceRoot,
+      cwd,
       mode: config.terminal ?? 'dedicated',
     });
   }
 
   private async executeTest(config: RunConfig, provider: BuildSystemProvider): Promise<void> {
-    const command = provider.buildTestCommand(config);
-    if (!command) {
+    const rawCommand = provider.buildTestCommand(config);
+    if (!rawCommand) {
       vscode.window.showErrorMessage(
         `[Target Run Manager] Cannot build test command for "${config.name}"`,
       );
       return;
     }
 
+    const cwd = config.cwd ?? this.workspaceRoot;
+    const command = this.wrapIfContainer(rawCommand, config, cwd);
     this.taskRunner.runInTerminal({
       command,
       title: `Test: ${config.name}`,
-      cwd: config.cwd ?? this.workspaceRoot,
+      cwd,
       mode: config.terminal ?? 'dedicated',
     });
   }
@@ -152,11 +197,13 @@ export class Runner {
       `[Target Run Manager] Analysis output dir: ${result.outputDir}`,
     );
 
-    // Run main analysis command
+    // Run main analysis command (wrap for DevContainer if needed)
+    const cwd = config.cwd ?? this.workspaceRoot;
+    const mainCommand = this.wrapIfContainer(result.command, config, cwd);
     this.taskRunner.runInTerminal({
-      command: result.command,
+      command: mainCommand,
       title: result.terminalTitle,
-      cwd: config.cwd ?? this.workspaceRoot,
+      cwd,
       mode: config.terminal ?? 'dedicated',
     });
 
@@ -191,6 +238,22 @@ export class Runner {
       return undefined;
     }
     return resolved;
+  }
+
+  /**
+   * Wrap a command for DevContainer execution if:
+   *  - the config has devcontainer: true, OR
+   *  - devcontainerAutoDetect is enabled globally and the manager reports isActive.
+   */
+  private wrapIfContainer(command: string, config: RunConfig, cwd: string): string {
+    if (!this.devContainer) { return command; }
+    const forceOn = config.devcontainer === true;
+    const forceOff = config.devcontainer === false;
+    if (forceOff) { return command; }
+    if ((forceOn || this.model?.settings.devcontainerAutoDetect) && this.devContainer.isActive) {
+      return this.devContainer.wrapCommand(command, cwd);
+    }
+    return command;
   }
 
   private getProvider(config: RunConfig): BuildSystemProvider {
