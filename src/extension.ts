@@ -16,6 +16,7 @@ import { showConfigQuickPick } from './ui/quickPick';
 import { ConfigEditorPanel } from './ui/configEditor';
 import { ConfigStorage } from './model/storage';
 import type { WorkspaceModel, RunConfig } from './model/config';
+import { importFromFile } from './import/importer';
 
 let outputChannel: vscode.OutputChannel;
 
@@ -260,6 +261,17 @@ export function activate(context: vscode.ExtensionContext): void {
         `[Target Run Manager] Deleted "${config.name}".`,
       );
     }),
+
+    // ── Import from file ──
+    vscode.commands.registerCommand(
+      'targetRunManager.importFromFile',
+      async (uri?: vscode.Uri) => {
+        const fileUri = uri ?? vscode.window.activeTextEditor?.document.uri;
+        if (!fileUri || !currentModel) { return; }
+        await importFromFile(fileUri, currentModel, storage, context);
+        loadConfigs();
+      },
+    ),
 
     // ── Move to Group ──
     vscode.commands.registerCommand('targetRunManager.moveToGroup', async (node: ConfigNode) => {

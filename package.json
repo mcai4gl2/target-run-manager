@@ -2,8 +2,8 @@
   "name": "target-run-manager",
   "displayName": "Target Run Manager",
   "description": "Build, run, debug, test, and profile CMake and Bazel targets from a unified sidebar panel",
-  "version": "0.1.0",
-  "publisher": "target-run-manager",
+  "version": "0.1.1",
+  "publisher": "mcai4gl2",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -125,6 +125,10 @@
         "command": "targetRunManager.moveToGroup",
         "title": "Move to Group",
         "icon": "$(arrow-right)"
+      },
+      {
+        "command": "targetRunManager.importFromFile",
+        "title": "Add Target(s) to Target Run Manager"
       }
     ],
     "views": {
@@ -195,6 +199,20 @@
           "command": "targetRunManager.deleteGroup",
           "when": "view == targetRunManagerView && viewItem == group",
           "group": "context@2"
+        }
+      ],
+      "explorer/context": [
+        {
+          "command": "targetRunManager.importFromFile",
+          "when": "resourceFilename == CMakeLists.txt || resourceFilename == BUILD || resourceFilename == BUILD.bazel",
+          "group": "2_workspace@10"
+        }
+      ],
+      "editor/context": [
+        {
+          "command": "targetRunManager.importFromFile",
+          "when": "resourceFilename == CMakeLists.txt || resourceFilename == BUILD || resourceFilename == BUILD.bazel",
+          "group": "1_modification@10"
         }
       ],
       "view/title": [

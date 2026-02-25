@@ -390,13 +390,47 @@ Useful for: loading secret env vars, setting up library paths, activating virtua
 - Status indicator in panel header: `[DevContainer: active]`
 - Per-config override: force devcontainer on/off
 
-### 10. Import from CMakeLists.txt Comments
+### 10. Context Menu Import from Build Files
 
-A migration path from the current `# vscode:` tag system:
-- Command: **"Import from CMakeLists comments"**
-- Scans all `CMakeLists.txt`, finds `# vscode:*` annotations
-- Creates corresponding run configs in the extension
-- Offers to move them into appropriate groups based on directory structure
+Right-click a build file in the Explorer sidebar or editor to selectively add targets to the manager — no YAML handcrafting required.
+
+**Supported files:** `CMakeLists.txt`, `BUILD`, `BUILD.bazel`
+
+**User flow:**
+1. Right-click the file → **"Add Target(s) to Target Run Manager"**
+2. A **multi-select quick-pick** lists all targets found in that file. Already-managed targets are shown pre-selected with an "already in manager" label (for visibility) but are skipped on save to avoid duplicates.
+3. A second quick-pick asks **which group** to place new configs in: `(Ungrouped)`, any existing group, or `+ Create new group…`.
+4. RunConfigs are saved immediately to the primary config file — no form, no YAML editing.
+5. The sidebar refreshes automatically.
+
+**Target detection** — text parsing only, no build system invocation required:
+
+| File | Rule | Kind | `runMode` |
+|---|---|---|---|
+| `CMakeLists.txt` | `add_executable(name ...)` | `executable` | `run` |
+| `CMakeLists.txt` | `add_test(NAME name ...)` | `test` | `test` |
+| `BUILD` / `BUILD.bazel` | `cc_binary(name = "name", ...)` | `executable` | `run` |
+| `BUILD` / `BUILD.bazel` | `cc_test(name = "name", ...)` | `test` | `test` |
+| `BUILD` / `BUILD.bazel` | `py_binary(name = "name", ...)` | `executable` | `run` |
+| `BUILD` / `BUILD.bazel` | `java_binary(name = "name", ...)` | `executable` | `run` |
+
+**Bazel label construction:** file path relative to workspace root → `//pkg:name`
+(e.g. `<root>/src/order_book/BUILD` + target `server` → `//src/order_book:server`)
+
+**Default values applied on quick-add:**
+
+| Field | Value |
+|---|---|
+| `id` | `cfg-<name>-<timestamp36>` |
+| `name` | target name as-is |
+| `buildSystem` | `cmake` or `bazel` (inferred from file) |
+| `target` | name (CMake) or full label (Bazel) |
+| `kind` | from rule type |
+| `runMode` | `run` for binaries, `test` for test rules |
+| `preBuild` | `true` |
+| `terminal` | `dedicated` |
+
+To set args, env vars, etc., right-click the new config in the sidebar → "Edit Configuration".
 
 ### 11. Quick Pick / Keyboard Shortcuts
 
@@ -532,16 +566,12 @@ Optional: capture run stdout/stderr and display inline, with:
 - Click-to-navigate for file:line references in output
 - Save output to file automatically
 
-### F. CMakeLists.txt Code Lens
+### F. Build File Code Lens (future)
 
-When browsing a `CMakeLists.txt`, show inline CodeLens above each `add_executable` / `add_test`:
-
-```
-▶ Run  🐞 Debug  🔨 Build  [+ Add Config]
-add_executable(order_book_main ...)
-```
-
-Clicking "Add Config" opens the config editor pre-populated with that target.
+Inline CodeLens above each `add_executable` / `add_test` / `cc_binary` / `cc_test` in build files
+is a potential future enhancement. The context-menu import (Feature 10) covers the same workflow
+without the complexity of a language-server-style decoration pass. CodeLens remains out of scope
+until there is a clear user need for per-line quick actions beyond what the context menu provides.
 
 ### G. Preset Matrix View
 
@@ -822,7 +852,7 @@ target-run-manager/
 | **Phase 3 — Analysis Mode** | Valgrind + perf runners, output dir management, post-process commands, `binaryOverride` for manual binaries | ✅ **COMPLETE** (2026-02-25) |
 | **Phase 4 — Debugger + DevContainer** | Direct `vscode.debug.startDebugging()` without touching `launch.json`, Docker exec wrapping | ✅ **COMPLETE** (2026-02-25) |
 | **Phase 5 — Bazel** | `bazel query` discovery, BazelBuildProvider, Bazel-specific config fields, BUILD file CodeLens | ✅ **COMPLETE** (2026-02-25) |
-| **Phase 6 — CodeLens + Import** | CMakeLists.txt + BUILD file CodeLens, import from `# vscode:` comments | ⬜ Not started |
+| **Phase 6 — Context Menu Import** | Context-menu import from CMakeLists.txt / BUILD / BUILD.bazel; multi-select quick-pick; group placement | ✅ **COMPLETE** (2026-02-26) |
 | **Phase 7 — Advanced** | Source scripts, compound configs, run history, output capture, coverage mode, heaptrack/strace tools | ✅ **COMPLETE** (2026-02-26) |
 
 Tests and CI are developed alongside each phase, not deferred — see Testing Strategy below.
@@ -1038,6 +1068,40 @@ All files         |   92.50 |    85.17 |   94.81 |   93.05
 ```
 
 All thresholds met (≥80% lines/functions, ≥75% branches).
+
+### Phase 6 — Implementation Details
+
+**Completed 2026-02-26.** 478 unit tests passing (+29 vs Phase 7). Type-check clean.
+
+#### Files Created
+
+| File | Description |
+|---|---|
+| `src/import/types.ts` | Shared `ParsedTarget` interface used by both parsers |
+| `src/import/cmake.ts` | Regex parser for `CMakeLists.txt`: extracts `add_executable` and `add_test(NAME ...)` targets |
+| `src/import/bazel.ts` | Regex parser for `BUILD`/`BUILD.bazel`: extracts `cc_binary`, `cc_test`, `py_binary`, `java_binary`; constructs full Bazel labels |
+| `src/import/importer.ts` | Orchestrates the import flow: parse → multi-select quick-pick → group selection → `storage.saveConfig()` |
+| `src/__tests__/import/cmake.test.ts` | 14 tests covering CMake parser |
+| `src/__tests__/import/bazel.test.ts` | 15 tests covering Bazel parser and label construction |
+
+#### Files Modified
+
+| File | Change |
+|---|---|
+| `package.json` | Added `targetRunManager.importFromFile` command; added `explorer/context` and `editor/context` menu entries |
+| `src/extension.ts` | Registered `targetRunManager.importFromFile` command; imports `importFromFile` from `src/import/importer.ts` |
+
+#### Phase 6 Feature Summary
+
+- **Context menu import**: Right-click `CMakeLists.txt`, `BUILD`, or `BUILD.bazel` in Explorer or editor → "Add Target(s) to Target Run Manager"
+- **Smart target detection**: Text-based regex parsing — no build system invocation required
+  - CMake: `add_executable(name ...)` → executable; `add_test(NAME name ...)` → test
+  - Bazel: `cc_binary`, `py_binary`, `java_binary` → executable; `cc_test` → test
+- **Bazel label construction**: File path relative to workspace root → `//pkg:name`
+- **Multi-select quick-pick**: All found targets listed; already-managed targets shown pre-selected but skipped on save
+- **Group placement**: Ungrouped / existing group / create new group flow
+- **Zero-form quick-add**: Sensible defaults applied automatically (`preBuild: true`, `terminal: dedicated`, `runMode` inferred from kind)
+- **No duplicates**: Targets already in the manager (matched by `target` label) are not re-added
 
 ### Phase 7 — Implementation Details
 
