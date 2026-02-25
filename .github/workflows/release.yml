@@ -12,6 +12,9 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write   # needed to create and push the git tag
+    env:
+      VSCE_PAT: ${{ secrets.VSCE_PAT }}
+      OVSX_PAT: ${{ secrets.OVSX_PAT }}
 
     steps:
       - uses: actions/checkout@v4
@@ -25,12 +28,12 @@ jobs:
       - run: npm run package
 
       - name: Publish to VS Code Marketplace
-        if: ${{ secrets.VSCE_PAT != '' }}
-        run: npx vsce publish --pat ${{ secrets.VSCE_PAT }}
+        if: ${{ env.VSCE_PAT != '' }}
+        run: npx vsce publish --pat "$VSCE_PAT"
 
       - name: Publish to Open VSX
-        if: ${{ secrets.OVSX_PAT != '' }}
-        run: npx ovsx publish *.vsix --pat ${{ secrets.OVSX_PAT }}
+        if: ${{ env.OVSX_PAT != '' }}
+        run: npx ovsx publish *.vsix --pat "$OVSX_PAT"
 
       - name: Tag release
         run: |
