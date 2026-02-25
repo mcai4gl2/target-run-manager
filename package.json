@@ -1,14 +1,38 @@
 {
   "name": "target-run-manager",
   "displayName": "Target Run Manager",
-  "description": "Manage CMake/Bazel build targets in VS Code",
+  "description": "Build, run, debug, test, and profile CMake and Bazel targets from a unified sidebar panel",
   "version": "0.1.0",
   "publisher": "target-run-manager",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/mcai4gl2/target-run-manager"
+  },
+  "bugs": {
+    "url": "https://github.com/mcai4gl2/target-run-manager/issues"
+  },
+  "homepage": "https://github.com/mcai4gl2/target-run-manager#readme",
+  "icon": "images/icon.png",
   "engines": {
     "vscode": "^1.85.0"
   },
   "categories": [
+    "Debuggers",
+    "Testing",
     "Other"
+  ],
+  "keywords": [
+    "cmake",
+    "bazel",
+    "c++",
+    "build",
+    "run",
+    "debug",
+    "valgrind",
+    "perf",
+    "gdb",
+    "lldb"
   ],
   "activationEvents": [
     "onView:targetRunManager",
