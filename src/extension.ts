@@ -9,7 +9,7 @@ import { parseFile } from './loader/parser';
 import { mergeFiles } from './loader/merger';
 import { validateModel } from './loader/validator';
 import { watchConfigFiles } from './loader/watcher';
-import { TargetRunManagerTreeProvider, ConfigNode, GroupNode } from './providers/treeProvider';
+import { TargetRunManagerTreeProvider, ConfigNode, GroupNode, CompoundNode } from './providers/treeProvider';
 import { Runner } from './runner/runner';
 import { StatusBarManager } from './ui/statusBar';
 import { showConfigQuickPick } from './ui/quickPick';
@@ -86,6 +86,12 @@ export function activate(context: vscode.ExtensionContext): void {
 
     // ── Refresh ──
     vscode.commands.registerCommand('targetRunManager.refresh', () => loadConfigs()),
+
+    // ── Run Compound ──
+    vscode.commands.registerCommand('targetRunManager.runCompound', async (node: CompoundNode) => {
+      if (!node?.compound || !runner) { return; }
+      await runner.runCompound(node.compound);
+    }),
 
     // ── Run / Build / Debug ──
     vscode.commands.registerCommand('targetRunManager.run', async (node: ConfigNode) => {

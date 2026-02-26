@@ -854,6 +854,7 @@ target-run-manager/
 | **Phase 5 — Bazel** | `bazel query` discovery, BazelBuildProvider, Bazel-specific config fields, BUILD file CodeLens | ✅ **COMPLETE** (2026-02-25) |
 | **Phase 6 — Context Menu Import** | Context-menu import from CMakeLists.txt / BUILD / BUILD.bazel; multi-select quick-pick; group placement | ✅ **COMPLETE** (2026-02-26) |
 | **Phase 7 — Advanced** | Source scripts, compound configs, run history, output capture, coverage mode, heaptrack/strace tools | ✅ **COMPLETE** (2026-02-26) |
+| **Phase 8 — Compound UI + Tmux** | Compound sidebar nodes, `runCompound` command, tmux parallel execution, CMake binary resolution fallback | ✅ **COMPLETE** (2026-02-27) |
 
 Tests and CI are developed alongside each phase, not deferred — see Testing Strategy below.
 
@@ -1154,6 +1155,45 @@ All files         |   83.52 |    78.89 |   83.40 |   84.45
 ```
 
 All thresholds met (≥80% lines/functions, ≥75% branches). The `build/cmake/` directory is below threshold at the per-directory level because `discovery.ts` and `fileApi.ts` (CMake File API client) interact heavily with the filesystem and cmake itself — these paths are exercised by integration tests, not unit tests.
+
+---
+
+### Phase 8 — Implementation Details
+
+**Completed 2026-02-27.** 509 unit tests passing (+60 vs Phase 7). Type-check clean.
+
+#### Files Created / Modified
+
+| File | Change | Description |
+|---|---|---|
+| `src/model/config.ts` | Modified | Added `TmuxOptions` interface (`sessionName?`, `layout?`). Added `tmux?: TmuxOptions` to `CompoundConfig` |
+| `src/runner/tmux.ts` | Created | `isTmuxAvailable()`: probes `tmux -V`. `buildTmuxCommand(sessionName, commands, layout)`: builds a shell command that kills any existing session, creates a new detached session with the first command, splits a pane for each subsequent command, applies the layout, and attaches |
+| `src/runner/runner.ts` | Modified | Extracted `prepareRunCommand` helper (binary resolution + shell command building without opening terminal). Added `runCompoundTmux` private method. Updated `runCompound` to check `compound.tmux && compound.order === 'parallel'` — uses tmux path if available, falls back to `executeCompound` with a log message if tmux is absent |
+| `src/providers/treeProvider.ts` | Modified | Added `CompoundNode` class (`contextValue = 'compound'`, icon `split-horizontal` for parallel or `list-ordered` for sequential, description shows mode label including `tmux`). Updated `TreeNode` union. Updated `getChildren` to append `CompoundNode` entries at root level |
+| `src/build/cmake/discovery.ts` | Modified | Added `findBinaryInDir` filesystem fallback to `resolveCMakeBinaryPath`. When CMake File API reply is absent or doesn't contain the target, recursively searches the build directory for an executable with the target name, skipping `CMakeFiles/`, `.cmake/`, `CMakeTmp/`, `_deps/` |
+| `package.json` | Modified | Added `targetRunManager.runCompound` command declaration (`icon: $(run-all)`). Added `view/item/context` menu entry for `viewItem == compound` at `inline@1` |
+| `src/extension.ts` | Modified | Registered `targetRunManager.runCompound` command. Imported `CompoundNode` from treeProvider |
+| `src/__tests__/extension.test.ts` | Modified | Added `targetRunManager.runCompound` to `ALL_COMMANDS` list |
+| `src/__tests__/runner/tmux.test.ts` | Created | 13 tests for `buildTmuxCommand`: empty input, single command (no split-window/select-layout), two commands, N commands, `&&` joining, kill-session ordering, session name sanitisation, custom layout, default tiled layout, single-quote escaping |
+| `src/__tests__/runner/runnerClass.test.ts` | Modified | Added `runner/tmux` mock. Updated `makeRunner` to expose `taskRunner` via `mock.results`. Added 4 tests to `Runner.runCompound` describe: sequential (unchanged), parallel without tmux, tmux available, tmux unavailable fallback |
+| `src/__tests__/build/cmake/discovery.test.ts` | Created | 11 tests for `resolveCMakeBinaryPath`: binary at root, nested binary, missing binary, non-executable skipped, three skip-dir cases (`CMakeFiles`, `.cmake`, `_deps`), real binary found alongside skipped dir, non-existent build dir, File API path takes precedence, fallback when reply lacks target |
+
+#### Phase 8 Feature Summary
+
+- **Compound sidebar**: `CompoundNode` renders compound configs at the root level of the sidebar tree, with a ▶▶ inline button (`run-all` icon). Icon and description reflect execution mode (`sequential`, `parallel`, or `tmux`).
+- **`runCompound` command**: `targetRunManager.runCompound` registered unconditionally in `activate()`. Clicking the inline button or right-clicking a compound node runs all referenced configs.
+- **Tmux parallel execution**: When a compound has `tmux: { sessionName?, layout? }` and `order: parallel`, a single VS Code terminal is opened running a tmux command that creates one pane per binary. If tmux is not installed, logs a message and falls back to normal parallel (separate VS Code terminals via `executeCompound`).
+- **CMake binary resolution fallback**: `resolveCMakeBinaryPath` now searches the build directory recursively when the CMake File API reply is absent or doesn't contain the target. Skips `CMakeFiles/`, `.cmake/`, `CMakeTmp/`, `_deps/`. Verifies the file is executable via `fs.accessSync(X_OK)`. Fixes "Cannot resolve binary" errors that occurred when the build directory was configured before the File API query file was written.
+- **`prepareRunCommand` refactor**: Binary resolution + shell command construction extracted from `executeRun` into a shared private helper, reused by both `executeRun` and `runCompoundTmux`.
+
+#### Coverage (Phase 8)
+
+```
+Test Suites: 33 passed
+Tests:       509 passed
+```
+
+All thresholds met (≥80% lines/functions, ≥75% branches).
 
 ---
 

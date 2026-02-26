@@ -67,14 +67,21 @@ jest.mock('../../runner/compound', () => ({
   executeCompound: jest.fn().mockResolvedValue(undefined),
 }));
 
+jest.mock('../../runner/tmux', () => ({
+  isTmuxAvailable: jest.fn().mockReturnValue(true),
+  buildTmuxCommand: jest.fn().mockReturnValue('tmux kill-session && tmux new-session'),
+}));
+
 // ---- Actual imports ----
 
 import * as vscode from 'vscode';
 import { Runner, withCaptureOutput } from '../../runner/runner';
+import { TaskRunner } from '../../runner/taskRunner';
 import { expandConfig } from '../../variables/expander';
 import { buildAnalysisCommands } from '../../analysis/analyzer';
 import { launchDebugSession } from '../../runner/launcher';
 import { executeCompound } from '../../runner/compound';
+import { isTmuxAvailable, buildTmuxCommand } from '../../runner/tmux';
 import { RunHistoryManager } from '../../runner/history';
 import type { RunConfig, WorkspaceModel, CompoundConfig } from '../../model/config';
 
@@ -121,7 +128,12 @@ function makeRunner(model?: WorkspaceModel) {
   if (model) {
     runner.setModel(model);
   }
-  return { runner, channel };
+  // Retrieve the TaskRunner mock instance created inside Runner's constructor.
+  // Use .mock.results (not .mock.instances) because mockImplementation returns a
+  // plain object — instances would be the raw 'this', not the returned value.
+  const results = (TaskRunner as jest.Mock).mock.results;
+  const taskRunner = results[results.length - 1].value as jest.Mocked<TaskRunner>;
+  return { runner, channel, taskRunner };
 }
 
 /** Set up expandConfig to echo back the config unchanged. */
@@ -449,10 +461,17 @@ describe('Runner.buildConfig', () => {
 // ---------------------------------------------------------------------------
 
 describe('Runner.runCompound', () => {
+  const mockIsTmuxAvailable = isTmuxAvailable as jest.Mock;
+  const mockBuildTmuxCommand = buildTmuxCommand as jest.Mock;
+
   beforeEach(() => {
     (vscode.window.showErrorMessage as jest.Mock).mockReset();
     mockExecuteCompound.mockReset();
     mockExecuteCompound.mockResolvedValue(undefined);
+    mockIsTmuxAvailable.mockReset();
+    mockIsTmuxAvailable.mockReturnValue(true);
+    mockBuildTmuxCommand.mockReset();
+    mockBuildTmuxCommand.mockReturnValue('tmux kill-session && tmux new-session');
   });
 
   it('shows error when model is not set', async () => {
@@ -464,11 +483,49 @@ describe('Runner.runCompound', () => {
     );
   });
 
-  it('delegates to executeCompound when model is set', async () => {
+  it('delegates to executeCompound when model is set (sequential)', async () => {
     const { runner } = makeRunner(makeModel());
     const compound: CompoundConfig = { id: 'cmp', name: 'C', configs: [], order: 'sequential' };
     await runner.runCompound(compound);
     expect(mockExecuteCompound).toHaveBeenCalled();
+  });
+
+  it('delegates to executeCompound for parallel without tmux block', async () => {
+    const { runner } = makeRunner(makeModel());
+    const compound: CompoundConfig = { id: 'cmp', name: 'C', configs: [], order: 'parallel' };
+    await runner.runCompound(compound);
+    expect(mockExecuteCompound).toHaveBeenCalled();
+    expect(mockBuildTmuxCommand).not.toHaveBeenCalled();
+  });
+
+  it('uses tmux path when compound.tmux is set and tmux is available', async () => {
+    mockIsTmuxAvailable.mockReturnValue(true);
+    const rc = makeRC({ id: 'a', buildSystem: 'manual' });
+    setupExpandPassThrough(rc);
+    const model = makeModel({ ungrouped: [rc] });
+    const { runner, taskRunner } = makeRunner(model);
+    const compound: CompoundConfig = {
+      id: 'cmp', name: 'My Servers', configs: ['a'], order: 'parallel',
+      tmux: { sessionName: 'servers', layout: 'tiled' },
+    };
+    await runner.runCompound(compound);
+    expect(mockExecuteCompound).not.toHaveBeenCalled();
+    expect(mockBuildTmuxCommand).toHaveBeenCalled();
+    expect((taskRunner.runInTerminal as jest.Mock)).toHaveBeenCalledWith(
+      expect.objectContaining({ command: expect.stringContaining('tmux') }),
+    );
+  });
+
+  it('falls back to executeCompound when compound.tmux is set but tmux is unavailable', async () => {
+    mockIsTmuxAvailable.mockReturnValue(false);
+    const { runner } = makeRunner(makeModel());
+    const compound: CompoundConfig = {
+      id: 'cmp', name: 'C', configs: [], order: 'parallel',
+      tmux: { sessionName: 'sess' },
+    };
+    await runner.runCompound(compound);
+    expect(mockExecuteCompound).toHaveBeenCalled();
+    expect(mockBuildTmuxCommand).not.toHaveBeenCalled();
   });
 });
 

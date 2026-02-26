@@ -2,7 +2,7 @@
   "name": "target-run-manager",
   "displayName": "Target Run Manager",
   "description": "Build, run, debug, test, and profile CMake and Bazel targets from a unified sidebar panel",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "publisher": "mcai4gl2",
   "license": "MIT",
   "repository": {
@@ -51,6 +51,11 @@
         "command": "targetRunManager.run",
         "title": "Run",
         "icon": "$(play)"
+      },
+      {
+        "command": "targetRunManager.runCompound",
+        "title": "Run Compound",
+        "icon": "$(run-all)"
       },
       {
         "command": "targetRunManager.build",
@@ -151,6 +156,11 @@
     },
     "menus": {
       "view/item/context": [
+        {
+          "command": "targetRunManager.runCompound",
+          "when": "view == targetRunManagerView && viewItem == compound",
+          "group": "inline@1"
+        },
         {
           "command": "targetRunManager.run",
           "when": "view == targetRunManagerView && viewItem == runConfig",

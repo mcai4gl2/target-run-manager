@@ -14,7 +14,8 @@ Managing dozens of build targets across CMake presets and Bazel configs usually 
 - **Rich YAML config format** — version-controlled, multi-file, supports macros and variable expansion
 - **In-editor form** — add or edit configs without touching YAML directly
 - **Analysis tools** — Valgrind, perf, gprof, heaptrack, strace, and custom wrappers built in
-- **Compound configs** — run multiple targets sequentially or in parallel with one click
+- **Compound configs** — run multiple targets sequentially, in parallel, or in a single tmux session with split panes
+- **Context menu import** — right-click any `CMakeLists.txt` or `BUILD` file to add targets directly from the Explorer
 - **Output capture** — pipe any command's stdout/stderr to a file via `tee`
 - **DevContainer support** — transparent `docker exec` wrapping for remote container workflows
 - **Status bar integration** — pin an active config, re-run it with a keyboard shortcut
@@ -186,6 +187,14 @@ compounds:
     name: Full Stack
     configs: ["cfg-ob-run", "cfg-bench-bazel"]   # Config IDs
     order: sequential    # or: parallel
+
+  - id: cmp-services-tmux
+    name: All Services
+    configs: ["cfg-ob-run", "cfg-bench-bazel"]
+    order: parallel
+    tmux:                # optional: launch in a single tmux session instead of separate terminals
+      sessionName: services
+      layout: tiled      # tiled | even-horizontal | even-vertical | main-horizontal | main-vertical
 ```
 
 ---
@@ -298,13 +307,42 @@ compounds:
       - cfg-integration-tests
     order: sequential   # Run one after the other
 
-  - id: cmp-parallel-build
-    name: Build Everything
-    configs: [cfg-ob-run, cfg-bench-bazel, cfg-manual-tool]
-    order: parallel     # Run all at the same time
+  - id: cmp-parallel
+    name: All Services
+    configs: [cfg-server, cfg-worker, cfg-monitor]
+    order: parallel     # Open one VS Code terminal per config simultaneously
+
+  - id: cmp-tmux
+    name: All Services (tmux)
+    configs: [cfg-server, cfg-worker, cfg-monitor]
+    order: parallel
+    tmux:
+      sessionName: services   # optional, defaults to compound name
+      layout: tiled           # tiled | even-horizontal | even-vertical | main-horizontal | main-vertical
 ```
 
-Compound configs appear in the sidebar alongside regular configs.
+Compound configs appear in the sidebar with a ▶▶ inline button. The icon indicates the execution mode: `list-ordered` for sequential, `split-horizontal` for parallel/tmux.
+
+**Tmux mode** (`order: parallel` + `tmux:` block) opens a single VS Code terminal that attaches to a tmux session with one pane per binary — giving a persistent, unified view of all processes. If tmux is not installed, the extension falls back automatically to the standard parallel mode (one VS Code terminal per config).
+
+> **Tip:** Install tmux (`apt install tmux` / `brew install tmux`) and use tmux mode to monitor a server, worker, and health-check process side by side.
+
+---
+
+## Importing Targets from Build Files
+
+Right-click any `CMakeLists.txt`, `BUILD`, or `BUILD.bazel` file in the Explorer sidebar (or editor) and choose **"Add Target(s) to Target Run Manager"**.
+
+A multi-select quick-pick lists all runnable targets found in that file. Pick one or more, choose a group (or create a new one), and the configs are added instantly — no YAML editing required.
+
+Supported rules:
+
+| File | Rules detected |
+|---|---|
+| `CMakeLists.txt` | `add_executable` → run, `add_test` → test |
+| `BUILD` / `BUILD.bazel` | `cc_binary`, `py_binary`, `java_binary` → run; `cc_test` → test |
+
+If a target is already in the manager it appears pre-selected in the list so you can see it but won't accidentally duplicate it.
 
 ---
 
@@ -360,7 +398,7 @@ Pull requests are accepted. Before submitting:
 npm install
 npm run lint       # ESLint
 npm run compile    # TypeScript type check
-npm test           # Jest (449 tests, ≥80% coverage required)
+npm test           # Jest (509 tests, ≥80% coverage required)
 ```
 
 ---

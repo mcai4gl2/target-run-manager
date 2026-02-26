@@ -8,6 +8,13 @@ export type RunMode = 'run' | 'debug' | 'test' | 'analyze' | 'coverage';
 export type TargetKind = 'executable' | 'test' | 'benchmark';
 export type TerminalMode = 'dedicated' | 'shared' | 'reuse';
 
+export interface TmuxOptions {
+  /** tmux session name. Defaults to the compound name (sanitised). */
+  sessionName?: string;
+  /** tmux layout applied after all panes are created. Default: 'tiled'. */
+  layout?: 'tiled' | 'even-horizontal' | 'even-vertical' | 'main-horizontal' | 'main-vertical';
+}
+
 export type AnalysisTool =
   | 'valgrind'
   | 'perf'
@@ -48,6 +55,8 @@ export interface CompoundConfig {
   /** Ordered list of RunConfig IDs to execute. */
   configs: string[];
   order: 'sequential' | 'parallel';
+  /** When set and order is 'parallel', opens a tmux session instead of separate VS Code terminals. */
+  tmux?: TmuxOptions;
   /** Source file this compound was loaded from */
   _sourceFile?: string;
 }

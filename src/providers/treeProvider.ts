@@ -4,10 +4,10 @@
  */
 
 import * as vscode from 'vscode';
-import type { WorkspaceModel, Group, RunConfig } from '../model/config';
+import type { WorkspaceModel, Group, RunConfig, CompoundConfig } from '../model/config';
 
 /** Union type for tree node items */
-export type TreeNode = GroupNode | ConfigNode | UngroupedHeaderNode;
+export type TreeNode = GroupNode | ConfigNode | UngroupedHeaderNode | CompoundNode;
 
 export class GroupNode extends vscode.TreeItem {
   readonly type = 'group' as const;
@@ -27,6 +27,21 @@ export class UngroupedHeaderNode extends vscode.TreeItem {
     this.contextValue = 'ungroupedHeader';
     this.iconPath = new vscode.ThemeIcon('package');
     this.id = 'ungrouped';
+  }
+}
+
+export class CompoundNode extends vscode.TreeItem {
+  readonly type = 'compound' as const;
+  constructor(public readonly compound: CompoundConfig) {
+    super(compound.name, vscode.TreeItemCollapsibleState.None);
+    this.contextValue = 'compound';
+    this.iconPath = new vscode.ThemeIcon(
+      compound.order === 'parallel' ? 'split-horizontal' : 'list-ordered',
+    );
+    this.id = `compound:${compound.id}`;
+    const modeLabel = compound.tmux ? 'tmux' : compound.order;
+    this.tooltip = `${compound.name} (${modeLabel}) — ${compound.configs.length} config(s)`;
+    this.description = modeLabel;
   }
 }
 
@@ -90,6 +105,10 @@ export class TargetRunManagerTreeProvider
 
       if (this.model.ungrouped.length > 0) {
         roots.push(new UngroupedHeaderNode());
+      }
+
+      for (const compound of this.model.compounds) {
+        roots.push(new CompoundNode(compound));
       }
 
       return roots;

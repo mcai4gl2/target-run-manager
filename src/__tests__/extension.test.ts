@@ -96,6 +96,7 @@ const ALL_COMMANDS = [
   'targetRunManager.deleteConfig',
   'targetRunManager.importFromFile',
   'targetRunManager.moveToGroup',
+  'targetRunManager.runCompound',
 ];
 
 function makeContext(): vscode.ExtensionContext {

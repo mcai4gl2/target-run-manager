@@ -17,6 +17,7 @@ import { RunHistoryManager } from './history';
 import { executeCompound } from './compound';
 import { defaultOutputDir } from '../analysis/output';
 import { TaskRunner } from './taskRunner';
+import { isTmuxAvailable, buildTmuxCommand } from './tmux';
 
 export class Runner {
   private readonly taskRunner: TaskRunner;
@@ -113,12 +114,24 @@ export class Runner {
     });
   }
 
-  /** Run a compound config (sequential or parallel). */
+  /** Run a compound config (sequential, parallel, or tmux). */
   async runCompound(compound: CompoundConfig): Promise<void> {
     if (!this.model) {
       vscode.window.showErrorMessage('Target Run Manager: no config model loaded');
       return;
     }
+
+    // Tmux path: parallel + tmux block present
+    if (compound.tmux && compound.order === 'parallel') {
+      if (isTmuxAvailable()) {
+        await this.runCompoundTmux(compound);
+        return;
+      }
+      this.outputChannel.appendLine(
+        '[Target Run Manager] tmux not found — falling back to parallel VS Code terminals.',
+      );
+    }
+
     const model = this.model;
     await executeCompound(compound, async (configId) => {
       const allConfigs = [
@@ -133,6 +146,66 @@ export class Runner {
           `[Target Run Manager] Compound: config id "${configId}" not found, skipping`,
         );
       }
+    });
+  }
+
+  /** Run a parallel compound in a single tmux session with one pane per config. */
+  private async runCompoundTmux(compound: CompoundConfig): Promise<void> {
+    const model = this.model!;
+    const allConfigs = [
+      ...model.ungrouped,
+      ...model.groups.flatMap((g) => g.configs),
+    ];
+    const commands: string[] = [];
+
+    for (const configId of compound.configs) {
+      const rawConfig = allConfigs.find((c) => c.id === configId);
+      if (!rawConfig) {
+        this.outputChannel.appendLine(
+          `[Target Run Manager] Compound tmux: config "${configId}" not found, skipping`,
+        );
+        continue;
+      }
+
+      const provider = this.getProvider(rawConfig);
+      const builtinContext = this.makeBuiltinContext(rawConfig);
+      const { expanded } = expandConfig(rawConfig, model, builtinContext);
+
+      // Build first if requested
+      if (expanded.preBuild && expanded.buildSystem !== 'manual') {
+        const result = await provider.buildTarget(expanded, {
+          appendLine: (line) => this.outputChannel.appendLine(line),
+        });
+        if (!result.success) {
+          this.outputChannel.appendLine(
+            `[Target Run Manager] Build failed for "${rawConfig.name}", skipping in tmux session.`,
+          );
+          continue;
+        }
+      }
+
+      const prepared = await this.prepareRunCommand(expanded, provider);
+      if (prepared) {
+        commands.push(prepared.command);
+      }
+    }
+
+    if (commands.length === 0) {
+      vscode.window.showWarningMessage(
+        '[Target Run Manager] No commands to run in tmux session.',
+      );
+      return;
+    }
+
+    const opts = compound.tmux!;
+    const sessionName = opts.sessionName ?? compound.name.replace(/[^a-zA-Z0-9_-]/g, '_');
+    const tmuxCmd = buildTmuxCommand(sessionName, commands, opts.layout ?? 'tiled');
+
+    this.taskRunner.runInTerminal({
+      command: tmuxCmd,
+      title: `Tmux: ${compound.name}`,
+      cwd: this.workspaceRoot,
+      mode: 'dedicated',
     });
   }
 
@@ -228,9 +301,26 @@ export class Runner {
   }
 
   private async executeRun(config: RunConfig, provider: BuildSystemProvider): Promise<void> {
-    const binaryPath = await this.resolveBinary(config, provider);
-    if (!binaryPath) { return; }
+    const prepared = await this.prepareRunCommand(config, provider);
+    if (!prepared) { return; }
+    this.taskRunner.runInTerminal({
+      command: prepared.command,
+      title: `Run: ${config.name}`,
+      cwd: prepared.cwd,
+      mode: config.terminal ?? 'dedicated',
+    });
+  }
 
+  /**
+   * Resolve the binary and build the shell command for a run-mode config
+   * without opening a terminal. Used by executeRun and runCompoundTmux.
+   */
+  private async prepareRunCommand(
+    config: RunConfig,
+    provider: BuildSystemProvider,
+  ): Promise<{ command: string; cwd: string } | undefined> {
+    const binaryPath = await this.resolveBinary(config, provider);
+    if (!binaryPath) { return undefined; }
     const cwd = config.cwd ?? this.workspaceRoot;
     const rawCommand = provider.buildRunCommand(config, binaryPath);
     const command = this.wrapIfContainer(
@@ -238,12 +328,7 @@ export class Runner {
       config,
       cwd,
     );
-    this.taskRunner.runInTerminal({
-      command,
-      title: `Run: ${config.name}`,
-      cwd,
-      mode: config.terminal ?? 'dedicated',
-    });
+    return { command, cwd };
   }
 
   private async executeTest(config: RunConfig, provider: BuildSystemProvider): Promise<void> {
