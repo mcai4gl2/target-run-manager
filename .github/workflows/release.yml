@@ -37,13 +37,13 @@ jobs:
 
       # Smoke-check: verify the bundled extension inside the VSIX
       #   1. js-yaml is inlined (the root cause of the original activation failure)
-      #   2. all 19 commands are registered
+      #   2. all 20 commands are registered
       - name: Verify bundle contents
         run: |
           JS=$(unzip -p extension.vsix extension/dist/extension.js)
           echo "$JS" | grep -q "js-yaml" || (echo "✗ js-yaml not bundled" && exit 1)
           COUNT=$(echo "$JS" | grep -c "registerCommand")
-          [ "$COUNT" -eq 19 ] || (echo "✗ expected 19 registerCommand calls, got $COUNT" && exit 1)
+          [ "$COUNT" -eq 20 ] || (echo "✗ expected 20 registerCommand calls, got $COUNT" && exit 1)
           echo "✓ js-yaml bundled, $COUNT commands registered"
 
       - name: Publish to VS Code Marketplace
