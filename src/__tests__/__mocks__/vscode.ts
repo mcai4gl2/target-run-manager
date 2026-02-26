@@ -30,6 +30,13 @@ const vscode = {
       dispose: jest.fn(),
     }),
     showQuickPick: jest.fn(),
+    createTreeView: jest.fn().mockReturnValue({
+      dispose: jest.fn(),
+      onDidCollapseElement: jest.fn(),
+      onDidExpandElement: jest.fn(),
+      onDidChangeSelection: jest.fn(),
+      onDidChangeVisibility: jest.fn(),
+    }),
     createTerminal: jest.fn().mockReturnValue({
       sendText: jest.fn(),
       show: jest.fn(),
