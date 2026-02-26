@@ -2,7 +2,7 @@
   "name": "target-run-manager",
   "displayName": "Target Run Manager",
   "description": "Build, run, debug, test, and profile CMake and Bazel targets from a unified sidebar panel",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "publisher": "mcai4gl2",
   "license": "MIT",
   "repository": {
@@ -35,6 +35,7 @@
     "lldb"
   ],
   "activationEvents": [
+    "onStartupFinished",
     "onView:targetRunManagerView",
     "workspaceContains:**/.vscode/target-manager*"
   ],

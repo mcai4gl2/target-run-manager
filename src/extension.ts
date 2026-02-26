@@ -25,28 +25,18 @@ export function activate(context: vscode.ExtensionContext): void {
   context.subscriptions.push(outputChannel);
 
   const workspaceRoot = getWorkspaceRoot();
-  if (!workspaceRoot) {
-    return;
-  }
 
-  const treeProvider = new TargetRunManagerTreeProvider();
-  const runner = new Runner(workspaceRoot, outputChannel);
-  const statusBar = new StatusBarManager();
-  const storage = new ConfigStorage(workspaceRoot);
-
-  context.subscriptions.push(treeProvider, statusBar);
-
-  const treeView = vscode.window.createTreeView('targetRunManagerView', {
-    treeDataProvider: treeProvider,
-    showCollapseAll: true,
-  });
-  context.subscriptions.push(treeView);
-
-  // ---- Config loading ----
+  // ---- Mutable state — populated during workspace initialization below ----
   let currentModel: WorkspaceModel | undefined;
+  let treeProvider: TargetRunManagerTreeProvider | undefined;
+  let runner: Runner | undefined;
+  let statusBar: StatusBarManager | undefined;
+  let storage: ConfigStorage | undefined;
 
   function loadConfigs(): void {
-    const files = discoverConfigFiles(workspaceRoot!);
+    if (!workspaceRoot || !treeProvider || !runner) { return; }
+
+    const files = discoverConfigFiles(workspaceRoot);
     if (files.length === 0) {
       const empty: WorkspaceModel = { groups: [], ungrouped: [], compounds: [], settings: {}, fileMacros: new Map() };
       outputChannel.appendLine('[Target Run Manager] No config files found.');
@@ -90,15 +80,7 @@ export function activate(context: vscode.ExtensionContext): void {
     );
   }
 
-  loadConfigs();
-
-  const watcher = watchConfigFiles(workspaceRoot, () => {
-    outputChannel.appendLine('[Target Run Manager] Config files changed — reloading...');
-    loadConfigs();
-  });
-  context.subscriptions.push({ dispose: () => watcher.dispose() });
-
-  // ---- Commands ----
+  // ---- Commands — registered unconditionally so they are always found ----
 
   context.subscriptions.push(
 
@@ -108,26 +90,28 @@ export function activate(context: vscode.ExtensionContext): void {
     // ── Run / Build / Debug ──
     vscode.commands.registerCommand('targetRunManager.run', async (node: ConfigNode) => {
       const config = resolveConfig(node, currentModel);
-      if (config) { await runner.runConfig(config); }
+      if (config && runner) { await runner.runConfig(config); }
     }),
 
     vscode.commands.registerCommand('targetRunManager.build', async (node: ConfigNode) => {
       const config = resolveConfig(node, currentModel);
-      if (config) { await runner.buildConfig(config); }
+      if (config && runner) { await runner.buildConfig(config); }
     }),
 
     vscode.commands.registerCommand('targetRunManager.debug', async (node: ConfigNode) => {
       const config = resolveConfig(node, currentModel);
-      if (config) { await runner.runConfig({ ...config, runMode: 'debug' }); }
+      if (config && runner) { await runner.runConfig({ ...config, runMode: 'debug' }); }
     }),
 
     // ── Active config ──
     vscode.commands.registerCommand('targetRunManager.setActive', (arg: RunConfig | ConfigNode) => {
+      if (!statusBar) { return; }
       const config = arg instanceof ConfigNode ? arg.config : arg;
       statusBar.setActiveConfig(config);
     }),
 
     vscode.commands.registerCommand('targetRunManager.runActive', async () => {
+      if (!statusBar || !runner) { return; }
       const active = statusBar.getActiveConfig();
       if (!active) {
         vscode.window.showWarningMessage('[Target Run Manager] No active config. Use Ctrl+Shift+R to pick one.');
@@ -137,16 +121,19 @@ export function activate(context: vscode.ExtensionContext): void {
     }),
 
     vscode.commands.registerCommand('targetRunManager.debugActive', async () => {
+      if (!statusBar || !runner) { return; }
       const active = statusBar.getActiveConfig();
       if (active) { await runner.runConfig({ ...active, runMode: 'debug' }); }
     }),
 
     vscode.commands.registerCommand('targetRunManager.buildActive', async () => {
+      if (!statusBar || !runner) { return; }
       const active = statusBar.getActiveConfig();
       if (active) { await runner.buildConfig(active); }
     }),
 
     vscode.commands.registerCommand('targetRunManager.rerunLast', async () => {
+      if (!statusBar || !runner) { return; }
       const active = statusBar.getActiveConfig();
       if (active) {
         await runner.runConfig(active);
@@ -156,13 +143,14 @@ export function activate(context: vscode.ExtensionContext): void {
     }),
 
     vscode.commands.registerCommand('targetRunManager.switchActive', async () => {
-      if (!currentModel) { return; }
+      if (!currentModel || !statusBar) { return; }
       const selected = await showConfigQuickPick(currentModel);
       if (selected) { statusBar.setActiveConfig(selected); }
     }),
 
     // ── Add Group ──
     vscode.commands.registerCommand('targetRunManager.addGroup', async () => {
+      if (!storage) { return; }
       const name = await vscode.window.showInputBox({
         prompt: 'Group name',
         placeHolder: 'e.g. Order Book',
@@ -176,7 +164,7 @@ export function activate(context: vscode.ExtensionContext): void {
 
     // ── Rename Group ──
     vscode.commands.registerCommand('targetRunManager.renameGroup', async (node: GroupNode) => {
-      if (!node?.group) { return; }
+      if (!node?.group || !storage) { return; }
       const newName = await vscode.window.showInputBox({
         prompt: 'New group name',
         value: node.group.name,
@@ -189,7 +177,7 @@ export function activate(context: vscode.ExtensionContext): void {
 
     // ── Delete Group ──
     vscode.commands.registerCommand('targetRunManager.deleteGroup', async (node: GroupNode) => {
-      if (!node?.group || !currentModel) { return; }
+      if (!node?.group || !currentModel || !storage) { return; }
       const group = node.group;
       const hasConfigs = group.configs.length > 0;
       const label = hasConfigs
@@ -207,7 +195,7 @@ export function activate(context: vscode.ExtensionContext): void {
 
     // ── Add Config ──
     vscode.commands.registerCommand('targetRunManager.addConfig', async (node?: GroupNode) => {
-      if (!currentModel) { return; }
+      if (!currentModel || !storage) { return; }
       ConfigEditorPanel.open(context, {
         mode: 'create',
         targetGroupId: node instanceof GroupNode ? node.group.id : undefined,
@@ -220,7 +208,7 @@ export function activate(context: vscode.ExtensionContext): void {
     // ── Edit Config ──
     vscode.commands.registerCommand('targetRunManager.editConfig', async (node: ConfigNode) => {
       const config = resolveConfig(node, currentModel);
-      if (!config || !currentModel) { return; }
+      if (!config || !currentModel || !storage) { return; }
       const groupId = currentModel.groups.find((g) =>
         g.configs.some((c) => c.id === config.id),
       )?.id;
@@ -237,7 +225,7 @@ export function activate(context: vscode.ExtensionContext): void {
     // ── Clone Config ──
     vscode.commands.registerCommand('targetRunManager.cloneConfig', async (node: ConfigNode) => {
       const config = resolveConfig(node, currentModel);
-      if (!config || !currentModel) { return; }
+      if (!config || !currentModel || !storage) { return; }
       const cloned = storage.cloneConfig(config, currentModel);
       loadConfigs();
       vscode.window.showInformationMessage(
@@ -248,7 +236,7 @@ export function activate(context: vscode.ExtensionContext): void {
     // ── Delete Config ──
     vscode.commands.registerCommand('targetRunManager.deleteConfig', async (node: ConfigNode) => {
       const config = resolveConfig(node, currentModel);
-      if (!config || !currentModel) { return; }
+      if (!config || !currentModel || !storage) { return; }
       const choice = await vscode.window.showWarningMessage(
         `Delete config "${config.name}"?`,
         { modal: true },
@@ -267,7 +255,7 @@ export function activate(context: vscode.ExtensionContext): void {
       'targetRunManager.importFromFile',
       async (uri?: vscode.Uri) => {
         const fileUri = uri ?? vscode.window.activeTextEditor?.document.uri;
-        if (!fileUri || !currentModel) { return; }
+        if (!fileUri || !currentModel || !storage) { return; }
         await importFromFile(fileUri, currentModel, storage, context);
         loadConfigs();
       },
@@ -276,7 +264,7 @@ export function activate(context: vscode.ExtensionContext): void {
     // ── Move to Group ──
     vscode.commands.registerCommand('targetRunManager.moveToGroup', async (node: ConfigNode) => {
       const config = resolveConfig(node, currentModel);
-      if (!config || !currentModel) { return; }
+      if (!config || !currentModel || !storage) { return; }
 
       const items: vscode.QuickPickItem[] = [
         { label: '$(package) (Ungrouped)', description: '', detail: 'ungrouped' },
@@ -298,6 +286,34 @@ export function activate(context: vscode.ExtensionContext): void {
     }),
 
   );
+
+  // ---- Workspace initialization (skipped gracefully if no workspace folder) ----
+
+  if (!workspaceRoot) {
+    outputChannel.appendLine('[Target Run Manager] No workspace folder open — run features unavailable.');
+    return;
+  }
+
+  treeProvider = new TargetRunManagerTreeProvider();
+  runner = new Runner(workspaceRoot, outputChannel);
+  statusBar = new StatusBarManager();
+  storage = new ConfigStorage(workspaceRoot);
+
+  context.subscriptions.push(treeProvider, statusBar);
+
+  const treeView = vscode.window.createTreeView('targetRunManagerView', {
+    treeDataProvider: treeProvider,
+    showCollapseAll: true,
+  });
+  context.subscriptions.push(treeView);
+
+  loadConfigs();
+
+  const watcher = watchConfigFiles(workspaceRoot, () => {
+    outputChannel.appendLine('[Target Run Manager] Config files changed — reloading...');
+    loadConfigs();
+  });
+  context.subscriptions.push({ dispose: () => watcher.dispose() });
 }
 
 export function deactivate(): void {
