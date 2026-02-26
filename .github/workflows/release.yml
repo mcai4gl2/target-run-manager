@@ -23,17 +23,36 @@ jobs:
           node-version: "20"
           cache: 'npm'
       - run: npm ci
+
+      # Type-check and test before building
       - run: npx tsc --noEmit
       - run: npm test
-      - run: npm run package
+
+      # Bundle TypeScript + dependencies into a single dist/extension.js
+      - run: npm run bundle
+
+      # Package once — all subsequent steps publish this exact artifact
+      - name: Package extension
+        run: npx vsce package --out extension.vsix
+
+      # Smoke-check: verify the bundled extension inside the VSIX
+      #   1. js-yaml is inlined (the root cause of the original activation failure)
+      #   2. all 19 commands are registered
+      - name: Verify bundle contents
+        run: |
+          JS=$(unzip -p extension.vsix extension/dist/extension.js)
+          echo "$JS" | grep -q "js-yaml" || (echo "✗ js-yaml not bundled" && exit 1)
+          COUNT=$(echo "$JS" | grep -c "registerCommand")
+          [ "$COUNT" -eq 19 ] || (echo "✗ expected 19 registerCommand calls, got $COUNT" && exit 1)
+          echo "✓ js-yaml bundled, $COUNT commands registered"
 
       - name: Publish to VS Code Marketplace
         if: ${{ env.VSCE_PAT != '' }}
-        run: npx vsce publish --pat "$VSCE_PAT"
+        run: npx vsce publish --packagePath extension.vsix --pat "$VSCE_PAT"
 
       - name: Publish to Open VSX
         if: ${{ env.OVSX_PAT != '' }}
-        run: npx ovsx publish *.vsix --pat "$OVSX_PAT"
+        run: npx ovsx publish extension.vsix --pat "$OVSX_PAT"
 
       - name: Tag release
         run: |

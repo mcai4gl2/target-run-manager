@@ -128,6 +128,22 @@ describe('Extension activation — command registration', () => {
     jest.clearAllMocks();
   });
 
+  it('registers all commands even when workspace initialization throws', () => {
+    // Simulate createTreeView throwing (e.g. stale registration from a prior crash)
+    (vscode.window.createTreeView as jest.Mock).mockImplementationOnce(() => {
+      throw new Error('Tree view already registered');
+    });
+
+    // activate() must not throw — the try/catch inside must absorb the error
+    expect(() => activate(makeContext())).not.toThrow();
+
+    // Commands must still be registered despite the init failure
+    const registered = getRegisteredCommands();
+    for (const cmd of ALL_COMMANDS) {
+      expect(registered).toContain(cmd);
+    }
+  });
+
   it('registers all commands when a workspace folder is open', () => {
     activate(makeContext());
     const registered = getRegisteredCommands();

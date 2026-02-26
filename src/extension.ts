@@ -287,33 +287,38 @@ export function activate(context: vscode.ExtensionContext): void {
 
   );
 
-  // ---- Workspace initialization (skipped gracefully if no workspace folder) ----
+  // ---- Workspace initialization (wrapped so a failure never throws out of activate()) ----
 
   if (!workspaceRoot) {
     outputChannel.appendLine('[Target Run Manager] No workspace folder open — run features unavailable.');
     return;
   }
 
-  treeProvider = new TargetRunManagerTreeProvider();
-  runner = new Runner(workspaceRoot, outputChannel);
-  statusBar = new StatusBarManager();
-  storage = new ConfigStorage(workspaceRoot);
+  try {
+    treeProvider = new TargetRunManagerTreeProvider();
+    runner = new Runner(workspaceRoot, outputChannel);
+    statusBar = new StatusBarManager();
+    storage = new ConfigStorage(workspaceRoot);
 
-  context.subscriptions.push(treeProvider, statusBar);
+    context.subscriptions.push(treeProvider, statusBar);
 
-  const treeView = vscode.window.createTreeView('targetRunManagerView', {
-    treeDataProvider: treeProvider,
-    showCollapseAll: true,
-  });
-  context.subscriptions.push(treeView);
+    const treeView = vscode.window.createTreeView('targetRunManagerView', {
+      treeDataProvider: treeProvider,
+      showCollapseAll: true,
+    });
+    context.subscriptions.push(treeView);
 
-  loadConfigs();
-
-  const watcher = watchConfigFiles(workspaceRoot, () => {
-    outputChannel.appendLine('[Target Run Manager] Config files changed — reloading...');
     loadConfigs();
-  });
-  context.subscriptions.push({ dispose: () => watcher.dispose() });
+
+    const watcher = watchConfigFiles(workspaceRoot, () => {
+      outputChannel.appendLine('[Target Run Manager] Config files changed — reloading...');
+      loadConfigs();
+    });
+    context.subscriptions.push({ dispose: () => watcher.dispose() });
+  } catch (err) {
+    outputChannel.appendLine(`[Target Run Manager] Initialization error: ${err}`);
+    outputChannel.show(true);
+  }
 }
 
 export function deactivate(): void {
