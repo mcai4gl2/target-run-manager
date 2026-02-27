@@ -121,6 +121,82 @@ describe('parser', () => {
     });
   });
 
+  describe('compounds parsing', () => {
+    const os = require('os');
+    const fs = require('fs');
+
+    it('parses a basic compound with order:parallel', () => {
+      const tmpFile = path.join(os.tmpdir(), 'compounds-basic.yaml');
+      fs.writeFileSync(tmpFile, [
+        'compounds:',
+        '  - id: cmp-demo',
+        '    name: Demo Compound',
+        '    configs:',
+        '      - cfg-pub',
+        '      - cfg-sub',
+        '    order: parallel',
+      ].join('\n'));
+      const result = parseFile(tmpFile);
+      fs.unlinkSync(tmpFile);
+      expect(result.errors).toHaveLength(0);
+      expect(result.raw?.compounds).toHaveLength(1);
+      const c = result.raw!.compounds![0];
+      expect(c.id).toBe('cmp-demo');
+      expect(c.name).toBe('Demo Compound');
+      expect(c.configs).toEqual(['cfg-pub', 'cfg-sub']);
+      expect(c.order).toBe('parallel');
+    });
+
+    it('parses compound with order:sequential', () => {
+      const tmpFile = path.join(os.tmpdir(), 'compounds-seq.yaml');
+      fs.writeFileSync(tmpFile, [
+        'compounds:',
+        '  - id: cmp-seq',
+        '    configs: [cfg-a, cfg-b]',
+        '    order: sequential',
+      ].join('\n'));
+      const result = parseFile(tmpFile);
+      fs.unlinkSync(tmpFile);
+      expect(result.errors).toHaveLength(0);
+      expect(result.raw?.compounds?.[0].order).toBe('sequential');
+    });
+
+    it('parses compound with tmux block', () => {
+      const tmpFile = path.join(os.tmpdir(), 'compounds-tmux.yaml');
+      fs.writeFileSync(tmpFile, [
+        'compounds:',
+        '  - id: cmp-tmux',
+        '    name: Tmux Demo',
+        '    configs: [cfg-a]',
+        '    order: parallel',
+        '    tmux:',
+        '      sessionName: my-session',
+        '      layout: tiled',
+      ].join('\n'));
+      const result = parseFile(tmpFile);
+      fs.unlinkSync(tmpFile);
+      expect(result.errors).toHaveLength(0);
+      const c = result.raw!.compounds![0];
+      expect(c.tmux).toEqual({ sessionName: 'my-session', layout: 'tiled' });
+    });
+
+    it('returns error when compounds is not an array', () => {
+      const tmpFile = path.join(os.tmpdir(), 'compounds-bad.yaml');
+      fs.writeFileSync(tmpFile, 'compounds: "not an array"');
+      const result = parseFile(tmpFile);
+      fs.unlinkSync(tmpFile);
+      expect(result.errors.some((e) => e.message.includes('compounds'))).toBe(true);
+    });
+
+    it('returns error when compound is missing id', () => {
+      const tmpFile = path.join(os.tmpdir(), 'compounds-noid.yaml');
+      fs.writeFileSync(tmpFile, 'compounds:\n  - name: "No ID"');
+      const result = parseFile(tmpFile);
+      fs.unlinkSync(tmpFile);
+      expect(result.errors.some((e) => e.message.includes('"id"'))).toBe(true);
+    });
+  });
+
   describe('JSON format', () => {
     it('parses valid JSON', () => {
       const os = require('os');

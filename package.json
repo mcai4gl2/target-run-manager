@@ -2,7 +2,7 @@
   "name": "target-run-manager",
   "displayName": "Target Run Manager",
   "description": "Build, run, debug, test, and profile CMake and Bazel targets from a unified sidebar panel",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "publisher": "mcai4gl2",
   "license": "MIT",
   "repository": {

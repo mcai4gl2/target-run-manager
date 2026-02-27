@@ -117,11 +117,43 @@ function normalizeRawFile(
     }
   }
 
+  if ('compounds' in obj) {
+    if (!Array.isArray(obj.compounds)) {
+      errors.push({ file: filePath, message: '"compounds" must be an array' });
+    } else {
+      raw.compounds = obj.compounds
+        .filter((c, i) => {
+          if (typeof c !== 'object' || c === null || Array.isArray(c)) {
+            errors.push({ file: filePath, message: `compounds[${i}] must be an object` });
+            return false;
+          }
+          const compound = c as Record<string, unknown>;
+          if (typeof compound.id !== 'string' || !compound.id) {
+            errors.push({ file: filePath, message: `compounds[${i}] must have a string "id"` });
+            return false;
+          }
+          return true;
+        })
+        .map((c) => normalizeRawCompound(c as Record<string, unknown>));
+    }
+  }
+
   if ('settings' in obj && typeof obj.settings === 'object' && !Array.isArray(obj.settings)) {
     raw.settings = obj.settings as Settings;
   }
 
   return raw;
+}
+
+function normalizeRawCompound(obj: Record<string, unknown>): Partial<import('../model/config').CompoundConfig> & { id: string } {
+  const compound: Record<string, unknown> = { id: obj.id as string };
+
+  if (typeof obj.name === 'string') { compound.name = obj.name; }
+  if (obj.order === 'parallel' || obj.order === 'sequential') { compound.order = obj.order; }
+  if (Array.isArray(obj.configs)) { compound.configs = (obj.configs as unknown[]).map(String); }
+  if (typeof obj.tmux === 'object' && obj.tmux !== null) { compound.tmux = obj.tmux; }
+
+  return compound as Partial<import('../model/config').CompoundConfig> & { id: string };
 }
 
 function normalizeRawGroup(
