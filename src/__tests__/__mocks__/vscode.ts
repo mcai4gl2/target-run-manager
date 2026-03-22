@@ -5,6 +5,15 @@ const vscode = {
       get: (key: string, defaultValue?: unknown) => defaultValue,
     }),
     findFiles: jest.fn().mockResolvedValue([]),
+    registerTextDocumentContentProvider: jest.fn().mockReturnValue({
+      dispose: jest.fn(),
+    }),
+    openTextDocument: jest.fn().mockImplementation(async (uriOrOptions?: unknown) => ({
+      uri: typeof uriOrOptions === 'object' && uriOrOptions !== null && 'uri' in (uriOrOptions as Record<string, unknown>)
+        ? (uriOrOptions as { uri: unknown }).uri
+        : uriOrOptions,
+      getText: jest.fn(),
+    })),
     createFileSystemWatcher: jest.fn().mockReturnValue({
       onDidChange: jest.fn(),
       onDidCreate: jest.fn(),
@@ -21,6 +30,7 @@ const vscode = {
     showErrorMessage: jest.fn(),
     showWarningMessage: jest.fn(),
     showInformationMessage: jest.fn(),
+    showTextDocument: jest.fn().mockResolvedValue(undefined),
     createStatusBarItem: jest.fn().mockReturnValue({
       text: '',
       tooltip: '',
@@ -61,10 +71,19 @@ const vscode = {
   },
   ThemeIcon: jest.fn().mockImplementation((id: string) => ({ id })),
   Uri: {
-    file: jest.fn((p: string) => ({ fsPath: p, path: p })),
-    parse: jest.fn((s: string) => ({ fsPath: s })),
+    file: jest.fn((p: string) => ({
+      fsPath: p,
+      path: p,
+      toString: () => p,
+    })),
+    parse: jest.fn((s: string) => ({
+      fsPath: s,
+      path: s,
+      toString: () => s,
+    })),
   },
   StatusBarAlignment: { Left: 1, Right: 2 },
+  ViewColumn: { Active: 1, Beside: 2 },
   MarkdownString: jest.fn().mockImplementation((s: string) => ({ value: s })),
   debug: {
     startDebugging: jest.fn().mockResolvedValue(true),

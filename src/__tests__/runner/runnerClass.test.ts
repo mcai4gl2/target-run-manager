@@ -84,6 +84,7 @@ import { executeCompound } from '../../runner/compound';
 import { isTmuxAvailable, buildTmuxCommand } from '../../runner/tmux';
 import { RunHistoryManager } from '../../runner/history';
 import type { RunConfig, WorkspaceModel, CompoundConfig } from '../../model/config';
+import type { BuildFailurePresenter } from '../../ui/buildFailureReport';
 
 const mockExpandConfig = expandConfig as jest.Mock;
 const mockBuildAnalysisCommands = buildAnalysisCommands as jest.Mock;
@@ -124,7 +125,10 @@ function makeModel(overrides: Partial<WorkspaceModel> = {}): WorkspaceModel {
 
 function makeRunner(model?: WorkspaceModel) {
   const channel = makeOutputChannel();
-  const runner = new Runner(WORKSPACE, channel);
+  const buildFailurePresenter: jest.Mocked<BuildFailurePresenter> = {
+    showBuildFailure: jest.fn().mockResolvedValue(undefined),
+  };
+  const runner = new Runner(WORKSPACE, channel, undefined, undefined, buildFailurePresenter);
   if (model) {
     runner.setModel(model);
   }
@@ -133,7 +137,7 @@ function makeRunner(model?: WorkspaceModel) {
   // plain object — instances would be the raw 'this', not the returned value.
   const results = (TaskRunner as jest.Mock).mock.results;
   const taskRunner = results[results.length - 1].value as jest.Mocked<TaskRunner>;
-  return { runner, channel, taskRunner };
+  return { runner, channel, taskRunner, buildFailurePresenter };
 }
 
 /** Set up expandConfig to echo back the config unchanged. */
@@ -245,6 +249,43 @@ describe('Runner.runConfig — build step', () => {
     const { runner } = makeRunner(makeModel());
     await runner.runConfig(rc);
     expect(runner.history.size).toBe(1);
+  });
+
+  it('opens build failure details when the user asks for them', async () => {
+    (vscode.window.showErrorMessage as jest.Mock).mockResolvedValue('Show Details');
+    const rc = makeRC({ runMode: 'run', preBuild: true });
+    setupExpandPassThrough(rc);
+
+    const { CMakeBuildProvider } = jest.requireMock('../../build/cmake/provider');
+    CMakeBuildProvider.mockImplementationOnce(() => ({
+      name: 'cmake',
+      buildTarget: jest.fn().mockImplementation(async (_config: RunConfig, output: { appendLine: (line: string) => void }) => {
+        output.appendLine('main.cpp:7: error: no matching function');
+        output.appendLine('note: candidate expects 2 arguments');
+        return { success: false, exitCode: 2, command: 'cmake --build --preset debug --target myapp' };
+      }),
+      resolveBinaryPath: jest.fn().mockResolvedValue('/build/app'),
+      buildRunCommand: jest.fn().mockReturnValue('/build/app'),
+      buildTestCommand: jest.fn().mockReturnValue('ctest'),
+      buildCoverageCommand: jest.fn().mockReturnValue('/build/app && gcovr'),
+    }));
+
+    const { runner, buildFailurePresenter } = makeRunner(makeModel());
+    await runner.runConfig(rc);
+
+    expect(vscode.window.showErrorMessage).toHaveBeenCalledWith(
+      expect.stringContaining('Build failed'),
+      'Show Details',
+    );
+    expect(buildFailurePresenter.showBuildFailure).toHaveBeenCalledWith(
+      expect.objectContaining({
+        configName: rc.name,
+        providerName: 'cmake',
+        exitCode: 2,
+        command: 'cmake --build --preset debug --target myapp',
+        output: expect.stringContaining('main.cpp:7: error'),
+      }),
+    );
   });
 });
 
@@ -453,6 +494,36 @@ describe('Runner.buildConfig', () => {
     await runner.buildConfig(makeRC());
     // No error, just silent return
     expect(vscode.window.showErrorMessage).not.toHaveBeenCalled();
+  });
+
+  it('offers failure details when a direct build fails', async () => {
+    (vscode.window.showErrorMessage as jest.Mock).mockResolvedValue('Show Details');
+    const rc = makeRC();
+    setupExpandPassThrough(rc);
+
+    const { CMakeBuildProvider } = jest.requireMock('../../build/cmake/provider');
+    CMakeBuildProvider.mockImplementationOnce(() => ({
+      name: 'cmake',
+      buildTarget: jest.fn().mockImplementation(async (_config: RunConfig, output: { appendLine: (line: string) => void }) => {
+        output.appendLine('fatal error: missing header');
+        return { success: false, exitCode: 1, command: 'cmake --build build/debug --target myapp' };
+      }),
+      resolveBinaryPath: jest.fn().mockResolvedValue('/build/app'),
+      buildRunCommand: jest.fn().mockReturnValue('/build/app'),
+      buildTestCommand: jest.fn().mockReturnValue('ctest'),
+      buildCoverageCommand: jest.fn().mockReturnValue('/build/app && gcovr'),
+    }));
+
+    const { runner, buildFailurePresenter } = makeRunner(makeModel());
+    await runner.buildConfig(rc);
+
+    expect(buildFailurePresenter.showBuildFailure).toHaveBeenCalledWith(
+      expect.objectContaining({
+        configName: rc.name,
+        exitCode: 1,
+        output: expect.stringContaining('fatal error: missing header'),
+      }),
+    );
   });
 });
 

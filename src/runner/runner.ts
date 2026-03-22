@@ -4,7 +4,7 @@
 
 import * as vscode from 'vscode';
 import type { RunConfig, CompoundConfig, WorkspaceModel } from '../model/config';
-import type { BuildSystemProvider } from '../build/provider';
+import type { BuildSystemProvider, OutputChannel as BuildOutputChannel } from '../build/provider';
 import { CMakeBuildProvider } from '../build/cmake/provider';
 import { BazelBuildProvider } from '../build/bazel/provider';
 import { ManualBuildProvider } from '../build/manual/provider';
@@ -18,6 +18,7 @@ import { executeCompound } from './compound';
 import { defaultOutputDir } from '../analysis/output';
 import { TaskRunner } from './taskRunner';
 import { isTmuxAvailable, buildTmuxCommand } from './tmux';
+import type { BuildFailureDetails, BuildFailurePresenter } from '../ui/buildFailureReport';
 
 export class Runner {
   private readonly taskRunner: TaskRunner;
@@ -25,6 +26,7 @@ export class Runner {
   private model: WorkspaceModel | undefined;
   private workspaceRoot: string;
   private devContainer: DevContainerManager | undefined;
+  private readonly buildFailurePresenter: BuildFailurePresenter | undefined;
   readonly history: RunHistoryManager;
 
   constructor(
@@ -32,12 +34,14 @@ export class Runner {
     outputChannel: vscode.OutputChannel,
     devContainer?: DevContainerManager,
     history?: RunHistoryManager,
+    buildFailurePresenter?: BuildFailurePresenter,
   ) {
     this.workspaceRoot = workspaceRoot;
     this.outputChannel = outputChannel;
     this.taskRunner = new TaskRunner();
     this.devContainer = devContainer;
     this.history = history ?? new RunHistoryManager();
+    this.buildFailurePresenter = buildFailurePresenter;
   }
 
   setModel(model: WorkspaceModel): void {
@@ -65,9 +69,8 @@ export class Runner {
 
     // Build first if requested
     if (expanded.preBuild && expanded.buildSystem !== 'manual') {
-      const buildResult = await provider.buildTarget(expanded, {
-        appendLine: (line) => this.outputChannel.appendLine(line),
-      });
+      const buildCapture = this.createBuildOutputCapture();
+      const buildResult = await provider.buildTarget(expanded, buildCapture.channel);
       buildStatus = buildResult.success ? 'success' : 'failed';
       if (!buildResult.success) {
         this.history.add({
@@ -76,9 +79,13 @@ export class Runner {
           startedAt,
           buildStatus,
         });
-        vscode.window.showErrorMessage(
-          `[Target Run Manager] Build failed (exit code ${buildResult.exitCode})`,
-        );
+        await this.showBuildFailureNotification({
+          configName: rawConfig.name,
+          providerName: provider.name,
+          command: buildResult.command,
+          exitCode: buildResult.exitCode,
+          output: buildCapture.getOutput(),
+        });
         return;
       }
     }
@@ -220,16 +227,19 @@ export class Runner {
     const { expanded } = expandConfig(rawConfig, this.model, builtinContext);
 
     this.outputChannel.show();
-    const result = await provider.buildTarget(expanded, {
-      appendLine: (line) => this.outputChannel.appendLine(line),
-    });
+    const buildCapture = this.createBuildOutputCapture();
+    const result = await provider.buildTarget(expanded, buildCapture.channel);
 
     if (result.success) {
       vscode.window.showInformationMessage(`[Target Run Manager] Build succeeded: ${rawConfig.name}`);
     } else {
-      vscode.window.showErrorMessage(
-        `[Target Run Manager] Build failed (exit code ${result.exitCode}): ${rawConfig.name}`,
-      );
+      await this.showBuildFailureNotification({
+        configName: rawConfig.name,
+        providerName: provider.name,
+        command: result.command,
+        exitCode: result.exitCode,
+        output: buildCapture.getOutput(),
+      });
     }
   }
 
@@ -453,6 +463,41 @@ export class Runner {
 
   dispose(): void {
     this.taskRunner.dispose();
+  }
+
+  private createBuildOutputCapture(): {
+    channel: BuildOutputChannel;
+    getOutput: () => string;
+  } {
+    const lines: string[] = [];
+    return {
+      channel: {
+        appendLine: (line: string) => {
+          this.outputChannel.appendLine(line);
+          lines.push(line);
+        },
+      },
+      getOutput: () => lines.join('\n'),
+    };
+  }
+
+  private async showBuildFailureNotification(details: BuildFailureDetails): Promise<void> {
+    const showDetails = 'Show Details';
+    const selection = await vscode.window.showErrorMessage(
+      `[Target Run Manager] Build failed (exit code ${details.exitCode}): ${details.configName}`,
+      showDetails,
+    );
+
+    if (selection !== showDetails) {
+      return;
+    }
+
+    if (this.buildFailurePresenter) {
+      await this.buildFailurePresenter.showBuildFailure(details);
+      return;
+    }
+
+    this.outputChannel.show(true);
   }
 }
 

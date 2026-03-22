@@ -14,6 +14,7 @@ import { Runner } from './runner/runner';
 import { StatusBarManager } from './ui/statusBar';
 import { showConfigQuickPick } from './ui/quickPick';
 import { ConfigEditorPanel } from './ui/configEditor';
+import { BuildFailureReport } from './ui/buildFailureReport';
 import { ConfigStorage } from './model/storage';
 import type { WorkspaceModel, RunConfig } from './model/config';
 import { importFromFile } from './import/importer';
@@ -32,6 +33,7 @@ export function activate(context: vscode.ExtensionContext): void {
   let runner: Runner | undefined;
   let statusBar: StatusBarManager | undefined;
   let storage: ConfigStorage | undefined;
+  let buildFailureReport: BuildFailureReport | undefined;
 
   function loadConfigs(): void {
     if (!workspaceRoot || !treeProvider || !runner) { return; }
@@ -302,11 +304,12 @@ export function activate(context: vscode.ExtensionContext): void {
 
   try {
     treeProvider = new TargetRunManagerTreeProvider();
-    runner = new Runner(workspaceRoot, outputChannel);
+    buildFailureReport = new BuildFailureReport();
+    runner = new Runner(workspaceRoot, outputChannel, undefined, undefined, buildFailureReport);
     statusBar = new StatusBarManager();
     storage = new ConfigStorage(workspaceRoot);
 
-    context.subscriptions.push(treeProvider, statusBar);
+    context.subscriptions.push(treeProvider, statusBar, buildFailureReport);
 
     const treeView = vscode.window.createTreeView('targetRunManagerView', {
       treeDataProvider: treeProvider,
